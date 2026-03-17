@@ -9,28 +9,50 @@ class AuthButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AuthState>();
+    final bool isLoading = state.phoneAuthState == PhoneAuthState.loading;
+
     return Positioned(
       bottom: 0,
       right: 0,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: FloatingActionButton(
-          backgroundColor:
-              state.phoneAuthState == PhoneAuthState.loading || state.phoneAuthState == PhoneAuthState.codeSent
-                  ? Colors.grey[300]
-                  : CityTheme.cityblue,
-          child: Icon(state.pageIndex == 2 ? Icons.check_rounded : Icons.arrow_forward_ios),
-          onPressed: state.phoneAuthState == PhoneAuthState.loading
+          backgroundColor: isLoading ? Colors.grey[300] : CityTheme.cityblue,
+          child: Icon(
+            state.pageIndex == 2
+                ? Icons.check_rounded
+                : Icons.arrow_forward_ios,
+          ),
+          onPressed: isLoading
               ? null
-              : () {
-                  if (state.phoneController.text.isNotEmpty &&
-                      state.phoneAuthState == PhoneAuthState.initial &&
-                      state.pageIndex == 0) {
-                    state.phoneNumberVerification("+234${state.phoneController.text}");
-                  } else if (state.phoneAuthState == PhoneAuthState.codeSent && state.pageIndex == 1) {
-                    state.verifyAndLogin(state.verificationId, state.otpController.text, state.phoneController.text);
+              : () async {
+                  if (state.pageIndex == 0 &&
+                      state.phoneController.text.isNotEmpty) {
+                    final phone = state.phoneController.text.trim();
+                    final normalizedPhone =
+                        phone.startsWith('0') ? phone.substring(1) : phone;
+
+                    await state.phoneNumberVerification("+966$normalizedPhone");
+                  } else if (state.pageIndex == 1 &&
+                      state.otpController.text.isNotEmpty) {
+                    await state.verifyAndLogin(
+                      state.verificationId,
+                      state.otpController.text.trim(),
+                      state.phoneController.text.trim(),
+                    );
                   } else if (state.pageIndex == 2) {
-                    state.signUp();
+                    if (state.firstNameController.text.isEmpty ||
+                        state.lastNameController.text.isEmpty ||
+                        state.emailController.text.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please fill all required fields'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    await state.signUp();
                   }
                 },
         ),

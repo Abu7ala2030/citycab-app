@@ -1,101 +1,155 @@
+import 'dart:async';
+
+import 'package:citycab/pages/map/map_state.dart';
 import 'package:citycab/ui/theme.dart';
 import 'package:citycab/ui/widget/titles/bottom_slider_title.dart';
-import 'package:citycab/utils/icons_assets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-class InMotion extends StatelessWidget {
-  const InMotion({
-    Key? key,
-  }) : super(key: key);
+class InMotion extends StatefulWidget {
+  const InMotion({Key? key}) : super(key: key);
+
+  @override
+  State<InMotion> createState() => _InMotionState();
+}
+
+class _InMotionState extends State<InMotion> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startRefreshTimer();
+  }
+
+  void _startRefreshTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<MapState>();
+
+    final ride = state.currentRide;
+    final option = ride?.rideOption ?? state.selectedOption;
+    final start = ride?.startAddress ?? state.startAddress;
+    final end = ride?.endAddress ?? state.endAddress;
+
+    final double price = option?.price ?? 0;
+    final double remainingKm = state.distanceRemainingKm;
+    final double progress = state.tripProgress.clamp(0.0, 1.0);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 16),
-          child: BottomSliderTitle(title: 'You Are In Motion'),
+        const Padding(
+          padding: EdgeInsets.only(left: 16),
+          child: BottomSliderTitle(title: 'YOU ARE IN MOTION'),
         ),
         const SizedBox(height: 16),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          height: 100,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(16),
             color: CityTheme.cityblue.withOpacity(.08),
           ),
           child: Column(
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Standard',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '\₦5,000',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.grey[900],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.timelapse_rounded,
-                            color: Colors.grey[600],
-                            size: 12,
+                  if (option != null)
+                    Image.asset(
+                      option.icon,
+                      height: 50,
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          option?.title ?? 'Ride',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black54,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Drop-off in 20 mins',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: CityTheme.cityblue,
-                            ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${price.toStringAsFixed(2)} SAR',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
-                  Icon(Icons.bolt, color: Colors.orange[300]),
-                  Image.asset(
-                    IconsAssets.vip_car,
-                    height: 60,
+                  Icon(
+                    Icons.bolt,
+                    color: Colors.orange[300],
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    size: 16,
+                    color: Colors.grey[700],
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      state.etaLabel,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: CityTheme.cityblue,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: LinearProgressIndicator(
+                  value: progress <= 0 ? 0.02 : progress,
+                  minHeight: 6,
+                  backgroundColor: Colors.grey[300],
+                  color: CityTheme.cityblue,
+                ),
+              ),
+              const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    'Estimated Time:',
+                    'Distance remaining',
                     style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[800],
+                      fontSize: 13,
+                      color: Colors.grey[700],
                     ),
                   ),
                   Text(
-                    '20 mins',
-                    style: TextStyle(
-                      fontSize: 16,
+                    '${remainingKm.toStringAsFixed(1)} km',
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: CityTheme.cityblue,
                     ),
@@ -107,63 +161,60 @@ class InMotion extends StatelessWidget {
         ),
         const SizedBox(height: CityTheme.elementSpacing),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Stack(
             children: [
               Positioned(
                 left: 10,
-                top: 20,
+                top: 22,
                 bottom: 25,
                 child: Container(
                   width: 2.5,
                   color: Colors.grey[400],
-                  height: 80,
                 ),
               ),
               Column(
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(CupertinoIcons.circle_fill, color: CityTheme.cityblue),
-                      const SizedBox(width: 8),
+                      const Icon(
+                        CupertinoIcons.circle_fill,
+                        color: CityTheme.cityblue,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: SizedBox(
-                          height: 45,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Woji, Port Harcourt, Nigeria',
-                              maxLines: 2,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.5,
-                                color: Colors.grey[800],
-                              ),
-                            ),
+                        child: Text(
+                          _addressLine(start),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            height: 1.4,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: CityTheme.elementSpacing),
+                  const SizedBox(height: 22),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(CupertinoIcons.placemark_fill, color: CityTheme.cityblue),
-                      const SizedBox(width: 8),
+                      const Icon(
+                        CupertinoIcons.placemark_fill,
+                        color: CityTheme.cityblue,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: SizedBox(
-                          height: 45,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              '25, Patterson Trans-Amadi Okujagu, Port Harcourt Nigeria',
-                              maxLines: 2,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.5,
-                                color: Colors.grey[800],
-                              ),
-                            ),
+                        child: Text(
+                          _addressLine(end),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            height: 1.4,
                           ),
                         ),
                       ),
@@ -176,5 +227,17 @@ class InMotion extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _addressLine(dynamic address) {
+    if (address == null) return '';
+
+    final parts = <String>[
+      (address.street ?? '').toString().trim(),
+      (address.city ?? '').toString().trim(),
+      (address.country ?? '').toString().trim(),
+    ].where((e) => e.isNotEmpty).toList();
+
+    return parts.join(', ');
   }
 }

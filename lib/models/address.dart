@@ -12,27 +12,37 @@ class Address {
   final LatLng latLng;
   final List<PointLatLng> polylines;
 
-  const Address(
-      {required this.id,
-      this.title,
-      required this.polylines,
-      required this.latLng,
-      required this.street,
-      required this.city,
-      required this.state,
-      required this.country,
-      required this.postcode});
+  const Address({
+    required this.id,
+    this.title,
+    required this.polylines,
+    required this.latLng,
+    required this.street,
+    required this.city,
+    required this.state,
+    required this.country,
+    required this.postcode,
+  });
 
   factory Address.fromMap(Map<String, dynamic> data) {
+    final latlng = data['latlng'] as Map<String, dynamic>?;
+
+    final lat = latlng?['lat'];
+    final lng = latlng?['lng'];
+
     return Address(
-      id: data['id'],
-      city: data['city'] ?? '',
-      country: data['country'] ?? '',
-      latLng: LatLng(data['latlng']['lat'], data['latlng']['lng']),
-      polylines: [],
-      postcode: data['post_code'] ?? '',
-      state: data['state'] ?? '',
-      street: data['street'] ?? '',
+      id: data['id']?.toString() ?? '',
+      title: data['title']?.toString(),
+      city: data['city']?.toString() ?? '',
+      country: data['country']?.toString() ?? '',
+      latLng: LatLng(
+        lat is num ? lat.toDouble() : 0.0,
+        lng is num ? lng.toDouble() : 0.0,
+      ),
+      polylines: const [],
+      postcode: data['post_code']?.toString() ?? '',
+      state: data['state']?.toString() ?? '',
+      street: data['street']?.toString() ?? '',
     );
   }
 }

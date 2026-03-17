@@ -1,87 +1,56 @@
+import 'package:citycab/pages/map/map_state.dart';
 import 'package:citycab/ui/theme.dart';
 import 'package:citycab/ui/widget/buttons/city_cab_button.dart';
 import 'package:citycab/ui/widget/titles/bottom_slider_title.dart';
-import 'package:citycab/utils/icons_assets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class ArrivedAtDestination extends StatelessWidget {
   const ArrivedAtDestination({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final state = context.watch<MapState>();
+    final ride = state.currentRide;
+    final start = ride?.startAddress ?? state.startAddress;
+    final end = ride?.endAddress ?? state.endAddress;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 16),
-          child: BottomSliderTitle(title: 'Arrived At Destination'),
+        const Padding(
+          padding: EdgeInsets.only(left: 16),
+          child: BottomSliderTitle(title: 'ARRIVED AT DESTINATION'),
         ),
         const SizedBox(height: 16),
-        RideDetailCard(),
-        const SizedBox(height: CityTheme.elementSpacing * 0.5),
+        const RideDetailCard(),
+        const SizedBox(height: CityTheme.elementSpacing * 0.75),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Stack(
             children: [
               Positioned(
-                left: 10,
-                top: 20,
-                bottom: 25,
+                left: 7,
+                top: 18,
+                bottom: 18,
                 child: Container(
                   width: 2.5,
-                  color: Colors.grey[400],
-                  height: 80,
+                  color: Colors.grey[350],
                 ),
               ),
               Column(
                 children: [
-                  Row(
-                    children: [
-                      Icon(CupertinoIcons.circle_fill, color: CityTheme.cityblue),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SizedBox(
-                          height: 40,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Woji, Port Harcourt, Nigeria',
-                              maxLines: 2,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.5,
-                                color: Colors.grey[800],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  _AddressTile(
+                    icon: CupertinoIcons.circle_fill,
+                    iconSize: 15,
+                    text: _addressLine(start),
                   ),
                   const SizedBox(height: CityTheme.elementSpacing),
-                  Row(
-                    children: [
-                      Icon(CupertinoIcons.placemark_fill, color: CityTheme.cityblue),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SizedBox(
-                          height: 40,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              '25, Patterson Trans-Amadi Okujagu, Port Harcourt Nigeria',
-                              maxLines: 2,
-                              style: TextStyle(
-                                fontSize: 16,
-                                height: 1.5,
-                                color: Colors.grey[800],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  _AddressTile(
+                    icon: CupertinoIcons.placemark_fill,
+                    iconSize: 17,
+                    text: _addressLine(end),
                   ),
                 ],
               ),
@@ -90,15 +59,178 @@ class ArrivedAtDestination extends StatelessWidget {
         ),
         const Spacer(),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: CityTheme.elementSpacing),
-          child: CityCabButton(
-            title: 'Pay For Ride',
-            color: CityTheme.cityblue,
-            textColor: CityTheme.cityWhite,
-            disableColor: CityTheme.cityLightGrey,
-            buttonState: ButtonState.initial,
-            onTap: () {},
+          padding: const EdgeInsets.symmetric(
+            horizontal: CityTheme.elementSpacing,
           ),
+          child: state.isRidePaid
+              ? const _RatingSection()
+              : const _PaymentSection(),
+        ),
+      ],
+    );
+  }
+
+  String _addressLine(dynamic address) {
+    if (address == null) return '';
+
+    final parts = <String>[
+      (address.street ?? '').toString().trim(),
+      (address.city ?? '').toString().trim(),
+      (address.country ?? '').toString().trim(),
+    ].where((e) => e.isNotEmpty).toList();
+
+    return parts.join(', ');
+  }
+}
+
+class _PaymentSection extends StatelessWidget {
+  const _PaymentSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<MapState>();
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: CityTheme.cityblue.withOpacity(.06),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.check_circle_outline,
+                color: CityTheme.cityblue,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Trip completed successfully. Proceed to payment.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[800],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        CityCabButton(
+          title: state.isPayingForRide ? 'Processing...' : 'Pay For Ride',
+          color: CityTheme.cityblue,
+          textColor: CityTheme.cityWhite,
+          disableColor: CityTheme.cityLightGrey,
+          buttonState:
+              state.isPayingForRide ? ButtonState.loading : ButtonState.initial,
+          onTap: () {
+            state.payForRide();
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _RatingSection extends StatelessWidget {
+  const _RatingSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<MapState>();
+    final driverName = state.assignedDriver?.getFullName ?? 'your driver';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Payment successful',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey[900],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Rate $driverName',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(5, (index) {
+            final star = index + 1;
+            final isActive = star <= state.selectedRatingStars;
+
+            return IconButton(
+              onPressed: () {
+                state.updateRatingStars(star);
+              },
+              icon: Icon(
+                isActive ? Icons.star_rounded : Icons.star_border_rounded,
+                color: isActive ? Colors.amber[600] : Colors.grey[400],
+                size: 34,
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: state.ratingSubjectController,
+          decoration: InputDecoration(
+            hintText: 'Title (optional)',
+            filled: true,
+            fillColor: Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: state.ratingBodyController,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Share your feedback (optional)',
+            filled: true,
+            fillColor: Colors.grey[100],
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        CityCabButton(
+          title: state.isSubmittingRating ? 'Submitting...' : 'Submit Rating',
+          color: CityTheme.cityblue,
+          textColor: CityTheme.cityWhite,
+          disableColor: CityTheme.cityLightGrey,
+          buttonState: state.isSubmittingRating
+              ? ButtonState.loading
+              : ButtonState.initial,
+          onTap: () {
+            state.submitRideRating();
+          },
         ),
       ],
     );
@@ -106,74 +238,118 @@ class ArrivedAtDestination extends StatelessWidget {
 }
 
 class RideDetailCard extends StatelessWidget {
-  const RideDetailCard({
+  const RideDetailCard({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<MapState>();
+    final option = state.currentRide?.rideOption ?? state.selectedOption;
+    final price = option?.price ?? state.ridePrice;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: CityTheme.cityblue.withOpacity(.08),
+      ),
+      child: Row(
+        children: [
+          if (option != null)
+            Image.asset(
+              option.icon,
+              height: 54,
+            ),
+          if (option != null) const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  option?.title ?? 'Ride',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${price.toStringAsFixed(2)} SAR',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.grey[900],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.timelapse_rounded,
+                      color: Colors.grey[600],
+                      size: 13,
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'Trip completed',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: CityTheme.cityblue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.check_circle,
+            color: Colors.green[500],
+            size: 26,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddressTile extends StatelessWidget {
+  final IconData icon;
+  final double iconSize;
+  final String text;
+
+  const _AddressTile({
     Key? key,
+    required this.icon,
+    required this.iconSize,
+    required this.text,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(15),
-        color: CityTheme.cityblue.withOpacity(.08),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Standard',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[800],
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '\₦5,000',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.grey[900],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.timelapse_rounded,
-                        color: Colors.grey[600],
-                        size: 12,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Drop-off in 20 mins',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: CityTheme.cityblue,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              Icon(Icons.bolt, color: Colors.orange[300]),
-              Image.asset(
-                IconsAssets.vip_car,
-                height: 60,
-              ),
-            ],
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          color: CityTheme.cityblue,
+          size: iconSize,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.4,
+              color: Colors.grey[800],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

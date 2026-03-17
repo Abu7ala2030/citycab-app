@@ -1,33 +1,23 @@
-import 'package:citycab/pages/home/home.dart';
-import 'package:citycab/repositories/user_repository.dart';
+import 'package:citycab/pages/session/session_gate.dart';
 import 'package:citycab/ui/theme.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
-  @override
-  _MyAppState createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  @override
-  void initState() {
-    UserRepository.instance.signInCurrentUser();
-    super.initState();
-  }
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'City Cab',
       theme: CityTheme.theme,
-      home: HomePage(),
+      home: const SessionGate(),
     );
   }
 }

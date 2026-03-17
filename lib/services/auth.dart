@@ -1,5 +1,4 @@
 import 'package:citycab/repositories/user_repository.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
@@ -7,46 +6,69 @@ class AuthService {
   static AuthService? _instance;
 
   static AuthService? get instance {
-    if (_instance == null) {
-      _instance = AuthService._();
-    }
+    _instance ??= AuthService._();
     return _instance;
   }
 
-  FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<void> verifyPhoneSendOtp(String phone,
-      {required void Function(PhoneAuthCredential)? completed,
-      required void Function(FirebaseAuthException)? failed,
-      required void Function(String, int?)? codeSent,
-      required void Function(String)? codeAutoRetrievalTimeout}) async {
+  Future<void> verifyPhoneSendOtp(
+    String phone, {
+    required void Function(PhoneAuthCredential)? completed,
+    required void Function(FirebaseAuthException)? failed,
+    required void Function(String, int?)? codeSent,
+    required void Function(String)? codeAutoRetrievalTimeout,
+  }) async {
+    print('verifyPhoneSendOtp called with: $phone');
+
     await _auth.verifyPhoneNumber(
       phoneNumber: phone,
-      verificationCompleted: completed!,
-      verificationFailed: failed!,
-      codeSent: codeSent!,
-      codeAutoRetrievalTimeout: codeAutoRetrievalTimeout!,
+      timeout: const Duration(seconds: 60),
+      verificationCompleted: (PhoneAuthCredential credential) {
+        print('verificationCompleted fired');
+        completed?.call(credential);
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        print('verificationFailed fired: ${e.code} | ${e.message}');
+        failed?.call(e);
+      },
+      codeSent: (String verificationId, int? resendToken) {
+        print('codeSent fired: $verificationId');
+        codeSent?.call(verificationId, resendToken);
+      },
+      codeAutoRetrievalTimeout: (String verificationId) {
+        print('codeAutoRetrievalTimeout fired: $verificationId');
+        codeAutoRetrievalTimeout?.call(verificationId);
+      },
     );
   }
 
-  Future<String?> verifyAndLogin(String verificationId, String smsCode, String phone) async {
-    PhoneAuthCredential credential = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode);
-    final authCredential = await _auth.signInWithCredential(credential);
+  Future<String?> verifyAndLogin(
+    String verificationId,
+    String smsCode,
+    String phone,
+  ) async {
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode,
+      );
 
-    if (authCredential.user != null) {
-      final uid = authCredential.user!.uid;
-      final userSanp = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (!userSanp.exists) {
-        await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'uid': uid,
-          'phone': phone,
-          'createdAt': DateTime.now(),
-          'isVerified': false,
-        });
+      final authCredential = await _auth.signInWithCredential(credential);
+
+      if (authCredential.user != null) {
+        print('signInWithCredential success: ${authCredential.user!.uid}');
+        return authCredential.user!.uid;
       }
-      return uid;
-    } else {
+
+      print('signInWithCredential returned null user');
       return null;
+    } on FirebaseAuthException catch (e) {
+      print('verifyAndLogin FirebaseAuthException: ${e.code} | ${e.message}');
+      rethrow;
+    } catch (e) {
+      print('verifyAndLogin error: $e');
+      rethrow;
     }
   }
 
@@ -60,7 +82,6 @@ class AuthService {
     UserRepository.instance.userNotifier.value = null;
     // ignore: invalid_use_of_visible_for_testing_member, invalid_use_of_protected_member
     UserRepository.instance.userNotifier.notifyListeners();
-
     return true;
   }
 }

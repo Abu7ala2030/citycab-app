@@ -2,10 +2,9 @@ import 'package:citycab/pages/map/map_state.dart';
 import 'package:citycab/ui/theme.dart';
 import 'package:citycab/ui/widget/buttons/city_cab_button.dart';
 import 'package:citycab/ui/widget/titles/bottom_slider_title.dart';
-import 'package:citycab/utils/icons_assets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/src/provider.dart';
+import 'package:provider/provider.dart';
 
 class ConfirmRide extends StatelessWidget {
   const ConfirmRide({
@@ -15,88 +14,113 @@ class ConfirmRide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<MapState>();
+    final option = state.selectedOption;
+    final endAddress = state.endAddress;
+
+    final bool isSearchingDriver = state.rideState == RideState.requestRide &&
+        state.assignedDriver == null;
+
     return Wrap(
       runAlignment: WrapAlignment.spaceBetween,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 16),
+            const Padding(
+              padding: EdgeInsets.only(left: 16),
               child: BottomSliderTitle(title: 'CONFIRM RIDE'),
             ),
             const SizedBox(height: 16),
+
+            /// Ride option card
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              height: 80,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              constraints: const BoxConstraints(minHeight: 96),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
                 color: CityTheme.cityblue.withOpacity(.08),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '${state.selectedOption?.title}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '\₦${state.selectedOption?.price}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.grey[900],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.timelapse_rounded,
-                            color: Colors.grey[600],
-                            size: 12,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          option?.title ?? '',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[800],
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Pickup in ${state.selectedOption?.timeOfArrival.difference(DateTime.now()).inMinutes} mins',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: CityTheme.cityblue,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          state.isCalculatingRoute
+                              ? 'Calculating...'
+                              : '${option?.price.toStringAsFixed(2) ?? '0.00'} SAR',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.grey[900],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        /// Pickup ETA
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.timelapse_rounded,
+                              color: Colors.grey[600],
+                              size: 12,
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Pickup in ${option?.timeOfArrival.difference(DateTime.now()).inMinutes ?? 0} mins',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: CityTheme.cityblue,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Icon(Icons.bolt, color: Colors.orange[300]),
-                  Image.asset(
-                    "${state.selectedOption?.icon}",
-                    height: 60,
-                  ),
+                  const SizedBox(width: 12),
+                  if (option != null)
+                    Image.asset(
+                      option.icon,
+                      height: 52,
+                    ),
                 ],
               ),
             ),
+
             const SizedBox(height: 16),
+
+            /// Destination address
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(CupertinoIcons.placemark_fill, color: CityTheme.cityblue),
+                  const Icon(
+                    CupertinoIcons.placemark_fill,
+                    color: CityTheme.cityblue,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${state.endAddress?.street}, ${state.endAddress?.city}, ${state.endAddress?.state}, ${state.endAddress?.country}',
+                      '${endAddress?.street ?? ''}, ${endAddress?.city ?? ''}, ${endAddress?.state ?? ''}, ${endAddress?.country ?? ''}',
                       style: TextStyle(
                         fontSize: 16,
                         height: 1.5,
@@ -108,16 +132,46 @@ class ConfirmRide extends StatelessWidget {
                 ],
               ),
             ),
+
+            /// Searching driver indicator
+            if (isSearchingDriver) ...[
+              const SizedBox(height: 20),
+              const Center(
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 10),
+                    Text(
+                      'Searching for nearby drivers...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
+
+        /// Confirm button
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: CityCabButton(
-            title: 'CONFIRM',
+            title: state.isCalculatingRoute
+                ? 'CALCULATING ROUTE...'
+                : isSearchingDriver
+                    ? 'SEARCHING DRIVER...'
+                    : 'CONFIRM REQUEST',
             color: CityTheme.cityblue,
             textColor: CityTheme.cityWhite,
             disableColor: CityTheme.cityLightGrey,
-            buttonState: ButtonState.initial,
+            buttonState: state.isCalculatingRoute ||
+                    (state.selectedOption?.price ?? 0) <= 0 ||
+                    isSearchingDriver
+                ? ButtonState.disabled
+                : ButtonState.initial,
             onTap: () {
               state.confirmRide();
             },

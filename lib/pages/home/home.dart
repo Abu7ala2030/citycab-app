@@ -3,6 +3,7 @@ import 'package:citycab/pages/auth/auth_page.dart';
 import 'package:citycab/pages/map/map_view.dart';
 import 'package:citycab/repositories/user_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:citycab/pages/map/map_view.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -15,20 +16,16 @@ class HomePage extends StatelessWidget {
         color: Colors.grey[200],
         child: ValueListenableBuilder<User?>(
           valueListenable: UserRepository.instance.userNotifier,
-          builder: (context, value, child) {
-            if (value != null) {
-              return Builder(
-                builder: (context) {
-                  if (value.isVerified) {
-                    return MapViewWidget();
-                  } else {
-                    return AuthPageWidget(page: 2, uid: value.uid);
-                  }
-                },
-              );
-            } else {
-              return AuthPageWidget(page: 0);
+          builder: (context, user, child) {
+            if (user == null) {
+              return const AuthPageWidget(page: 0);
             }
+
+            if (!user.isVerified) {
+              return AuthPageWidget(page: 2, uid: user.uid);
+            }
+
+            return const MapView();
           },
         ),
       ),

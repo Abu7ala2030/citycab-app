@@ -25,7 +25,8 @@ class RideOptionCard extends StatelessWidget {
         width: 100,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-            color: isSelected ? CityTheme.cityblue.withOpacity(.02) : Colors.white,
+            color:
+                isSelected ? CityTheme.cityblue.withOpacity(.02) : Colors.white,
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
               width: 1,
@@ -55,14 +56,7 @@ class RideOptionCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              '\₦${option.price}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[900],
-              ),
-            ),
+            Text("${option.price.toStringAsFixed(0)} SAR")
           ],
         ),
       ),

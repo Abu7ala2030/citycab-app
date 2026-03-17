@@ -21,11 +21,11 @@ class SetUpAccount extends StatelessWidget {
             const SizedBox(height: kToolbarHeight * 0.6),
             Text(
               'Set Up Account',
-              style: Theme.of(context).textTheme.headline5,
+              style: Theme.of(context).textTheme.headlineSmall,
             ).paddingBottom(CityTheme.elementSpacing / 2),
             Text(
               'Fill the details below...',
-              style: Theme.of(context).textTheme.bodyText1,
+              style: Theme.of(context).textTheme.bodyLarge,
             ).paddingBottom(CityTheme.elementSpacing),
             Row(
               children: [
@@ -59,7 +59,7 @@ class SetUpAccount extends StatelessWidget {
                 SizedBox(width: CityTheme.elementSpacing * 0.5),
                 Text(
                   'I\'m a Driver',
-                  style: Theme.of(context).textTheme.headline6,
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
               ],
             ).paddingBottom(CityTheme.elementSpacing),

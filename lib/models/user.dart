@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 enum Roles { passenger, driver, admin }
@@ -22,7 +23,7 @@ class User {
   bool get isDriverRole => role == Roles.driver;
   bool get isAdminRole => role == Roles.admin;
 
-  String get getFullName => firstname + " " + lastname;
+  String get getFullName => "$firstname $lastname".trim();
 
   const User({
     required this.isActive,
@@ -42,21 +43,45 @@ class User {
   });
 
   factory User.fromMap(Map<String, dynamic> data) {
+    final rawCreatedAt = data['createdAt'];
+    DateTime createdAt;
+
+    if (rawCreatedAt is Timestamp) {
+      createdAt = rawCreatedAt.toDate();
+    } else if (rawCreatedAt is DateTime) {
+      createdAt = rawCreatedAt;
+    } else {
+      createdAt = DateTime.now();
+    }
+
+    final rawLatLng = data['latlng'];
+    LatLng? parsedLatLng;
+
+    if (rawLatLng is Map<String, dynamic>) {
+      final rawLat = rawLatLng['lat'];
+      final rawLng = rawLatLng['lng'];
+
+      if (rawLat is num && rawLng is num) {
+        parsedLatLng = LatLng(rawLat.toDouble(), rawLng.toDouble());
+      }
+    }
+
     return User(
-      uid: data['uid'] ?? '',
-      isActive: data['is_active'] ?? false,
-      firstname: data['firstname'] ?? '',
-      lastname: data['lastname'] ?? '',
-      email: data['email'] ?? '',
-      createdAt: DateTime.fromMillisecondsSinceEpoch(data['createdAt'].millisecondsSinceEpoch),
-      isVerified: data['is_verified'] ?? false,
-      licensePlate: data['license_plate'] ?? '',
-      phone: data['phone'] ?? '',
-      vehicleType: data['vehicle_type'] ?? '',
-      vehicleColor: data['vehicle_color'] ?? '',
-      vehicleManufacturer: data['vehicle_manufacturer'] ?? '',
-      role: Roles.values[data['role'] ?? 0],
-      latlng: data['latlng'] == null ? LatLng(0, 0) : LatLng(data['latlng']['lat'], data['latlng']['lng']),
+      uid: data['uid']?.toString() ?? '',
+      isActive: data['is_active'] == true,
+      firstname: data['firstname']?.toString() ?? '',
+      lastname: data['lastname']?.toString() ?? '',
+      email: data['email']?.toString() ?? '',
+      createdAt: createdAt,
+      isVerified: data['is_verified'] == true,
+      licensePlate: data['license_plate']?.toString() ?? '',
+      phone: data['phone']?.toString() ?? '',
+      vehicleType: data['vehicle_type']?.toString() ?? '',
+      vehicleColor: data['vehicle_color']?.toString() ?? '',
+      vehicleManufacturer: data['vehicle_manufacturer']?.toString() ?? '',
+      role:
+          Roles.values[(data['role'] is num ? data['role'] as num : 0).toInt()],
+      latlng: parsedLatLng,
     );
   }
 }

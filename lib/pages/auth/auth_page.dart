@@ -1,72 +1,58 @@
 import 'package:citycab/pages/auth/auth_state.dart';
-import 'package:citycab/pages/auth/widgets/auth_button.dart';
 import 'package:citycab/pages/auth/widgets/otp_page.dart';
 import 'package:citycab/pages/auth/widgets/phone_page.dart';
-import 'package:citycab/pages/auth/widgets/set_up_account.dart';
+import 'package:citycab/pages/auth/widgets/setup_profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class AuthPage extends StatefulWidget {
+class AuthPage extends StatelessWidget {
   final int page;
-  final String? uid;
+  final String uid;
+
   const AuthPage({
     Key? key,
-    this.page = 0,
-    this.uid,
+    required this.page,
+    this.uid = '',
   }) : super(key: key);
 
   @override
-  _AuthPageState createState() => _AuthPageState();
-}
-
-class _AuthPageState extends State<AuthPage> {
-  @override
   Widget build(BuildContext context) {
-    final state = Provider.of<AuthState>(context);
-    final screenSize = MediaQuery.of(context).size;
-    return Builder(builder: (context) {
-      return Stack(
-        children: [
-          Container(
-            height: screenSize.height,
-            width: screenSize.width,
-            color: Colors.white,
-            child: PageView(
-              controller: state.controller,
-              onPageChanged: state.onPageChanged,
-              physics: NeverScrollableScrollPhysics(),
-              children: [
-                PhonePage(),
-                OtpPage(),
-                SetUpAccount(),
-              ],
-            ),
-          ),
-          AuthButton(),
-        ],
-      );
-    });
+    return AuthPageWidget(
+      page: page,
+      uid: uid,
+    );
   }
 }
 
 class AuthPageWidget extends StatelessWidget {
   final int page;
-  final String? uid;
+  final String uid;
 
   const AuthPageWidget({
     Key? key,
     required this.page,
-    this.uid,
+    this.uid = '',
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final state = AuthState(page, uid ?? '');
-    return ChangeNotifierProvider(
-      create: (_) => state,
-      child: ChangeNotifierProvider.value(
-        value: state,
-        child: AuthPage(page: page, uid: uid),
+    return ChangeNotifierProvider<AuthState>(
+      create: (_) => AuthState(page, uid),
+      child: Consumer<AuthState>(
+        builder: (context, state, child) {
+          return Scaffold(
+            body: PageView(
+              controller: state.controller,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: state.onPageChanged,
+              children: [
+                const PhonePage(),
+                OtpPage(),
+                SetupProfilePage(),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

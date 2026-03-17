@@ -4,26 +4,33 @@ import 'package:flutter/material.dart';
 
 class CustomWindow extends StatelessWidget {
   const CustomWindow({Key? key, required this.info}) : super(key: key);
+
   final CityCabInfoWindow info;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: CityTheme.cityWhite,
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(color: CityTheme.cityBlack.withOpacity(.4), spreadRadius: 2, blurRadius: 5),
-                ],
-              ),
-              width: double.infinity,
-              height: double.infinity,
+    return Material(
+      color: Colors.transparent,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
               child: Container(
+                width: double.infinity,
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  color: CityTheme.cityWhite,
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CityTheme.cityBlack.withOpacity(.4),
+                      spreadRadius: 2,
+                      blurRadius: 5,
+                    ),
+                  ],
+                ),
                 child: Row(
                   children: [
                     if (info.type == InfoWindowType.position)
@@ -34,27 +41,45 @@ class CustomWindow extends StatelessWidget {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text('${(info.time!.inMinutes) % 60}',
-                                style: Theme.of(context).textTheme.subtitle1?.copyWith(color: CityTheme.cityWhite)),
-                            Text('min',
-                                style: Theme.of(context).textTheme.bodyText2?.copyWith(color: CityTheme.cityWhite)),
+                            Text(
+                              '${(info.time?.inMinutes ?? 0) % 60}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(color: CityTheme.cityWhite),
+                            ),
+                            Text(
+                              'min',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: CityTheme.cityWhite),
+                            ),
                           ],
                         ),
                       ),
                     Expanded(
-                        child: Text(
-                      '${info.name}',
-                      style: Theme.of(context).textTheme.bodyText1?.copyWith(color: CityTheme.cityBlack),
-                    ).paddingAll(8)),
-                    Icon(Icons.arrow_forward_ios, size: 16, color: CityTheme.cityBlack),
+                      child: Text(
+                        info.name ?? '',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyLarge
+                            ?.copyWith(color: CityTheme.cityBlack),
+                      ).paddingAll(8),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: CityTheme.cityBlack,
+                    ),
                     const SizedBox(width: 4),
                   ],
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -65,6 +65,8 @@ class CityTheme {
 
   static ThemeData theme = ThemeData(
     primaryColor: cityblue,
-    backgroundColor: cityWhite,
+    colorScheme: ColorScheme.light(
+      surface: cityWhite,
+    ),
   );
 }

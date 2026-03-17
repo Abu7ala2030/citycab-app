@@ -12,56 +12,108 @@ class SearchMapBar extends StatelessWidget {
     final state = context.watch<MapState>();
 
     return SafeArea(
-      child: Container(
-        decoration: BoxDecoration(
-          color: CityTheme.cityWhite,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: [
-            BoxShadow(color: CityTheme.cityBlack.withOpacity(.2), spreadRadius: 2, blurRadius: 5),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Column(
-                  children: [
-                    Icon(Icons.circle, size: 16, color: CityTheme.cityblue),
-                    Container(width: 4, height: 40, color: CityTheme.cityblue),
-                    Icon(Icons.place, color: CityTheme.cityblue),
-                  ],
-                ).paddingHorizontal(4),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Focus(
-                        focusNode: state.focusNode,
-                        child: CityTextField(
-                          label: 'My Address',
-                          controller: state.currentAddressController,
-                          onChanged: (v) {
-                            state.searchAddress(v);
-                          },
-                        ).paddingBottom(12),
-                      ),
-                      Focus(
-                        focusNode: state.focusNode,
-                        child: CityTextField(
-                          label: 'Destination Address',
-                          controller: state.destinationAddressController,
-                          onChanged: (v) {
-                            state.searchAddress(v);
-                          },
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: CityTheme.cityWhite,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: CityTheme.cityBlack.withOpacity(.2),
+                spreadRadius: 2,
+                blurRadius: 5,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.circle,
+                          size: 16,
+                          color: CityTheme.cityblue,
                         ),
+                        Container(
+                          width: 4,
+                          height: 40,
+                          color: CityTheme.cityblue,
+                        ),
+                        const Icon(
+                          Icons.place,
+                          color: CityTheme.cityblue,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        right: 12,
+                        top: 12,
+                        bottom: 12,
                       ),
-                    ],
-                  ).paddingRight(12).paddingVertical(12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Focus(
+                            focusNode: state.focusNode,
+                            child: CityTextField(
+                              label: 'My Address',
+                              controller: state.currentAddressController,
+                              onChanged: (v) {
+                                state.searchAddress(v);
+                              },
+                            ).paddingBottom(12),
+                          ),
+                          Focus(
+                            focusNode: state.focusNode,
+                            child: CityTextField(
+                              label: 'Destination Address',
+                              controller: state.destinationAddressController,
+                              onChanged: (v) {
+                                state.searchAddress(v);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              /// SEARCH RESULTS
+              if (state.searchedAddress.isNotEmpty)
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: state.searchedAddress.length,
+                  itemBuilder: (context, index) {
+                    final address = state.searchedAddress[index];
+
+                    return ListTile(
+                      leading: const Icon(Icons.location_on),
+                      title: Text(address.street),
+                      subtitle: Text("${address.city}, ${address.country}"),
+                      onTap: () {
+                        state.onTapAddressList(address);
+                      },
+                    );
+                  },
                 ),
-              ],
-            ),
-          ],
-        ),
-      ).paddingAll(8),
+            ],
+          ),
+        ).paddingAll(8),
+      ),
     );
   }
 }

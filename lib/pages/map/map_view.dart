@@ -1,100 +1,93 @@
-import 'package:citycab/models/address.dart';
 import 'package:citycab/pages/map/map_state.dart';
 import 'package:citycab/pages/map/widgets/bottom_slide.dart';
-import 'package:citycab/pages/map/widgets/search_map_address.dart';
-import 'package:citycab/services/auth.dart';
 import 'package:citycab/services/map_services.dart';
 import 'package:citycab/ui/info_window/custom_info_window.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
-class MapView extends StatelessWidget {
-  const MapView({Key? key});
+class MapView extends StatefulWidget {
+  const MapView({Key? key}) : super(key: key);
+
+  @override
+  State<MapView> createState() => _MapViewState();
+}
+
+class _MapViewState extends State<MapView> {
+  late final MapState _mapState;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapState = MapState();
+  }
+
+  @override
+  void dispose() {
+    _mapState.dispose();
+    MapService.instance.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<MapState>();
-    return SizedBox(
-      key: key,
-      height: MediaQuery.of(context).size.height,
-      width: MediaQuery.of(context).size.width,
-      child: ValueListenableBuilder<Address?>(
-        valueListenable: state.currentPosition,
-        builder: (context, currentPosition, child) {
-          if (currentPosition == null) {
-            return Center(child: const CircularProgressIndicator());
-          }
+    return ChangeNotifierProvider<MapState>.value(
+      value: _mapState,
+      child: Consumer<MapState>(
+        builder: (context, state, child) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
 
-          return Stack(
-            children: [
-              ValueListenableBuilder<List<Marker>?>(
-                  valueListenable: MapService.instance!.markers,
-                  builder: (context, markers, child) {
+            final message = state.uiMessage;
+            if (message != null && message.isNotEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(message)),
+              );
+              state.clearMessage();
+            }
+          });
+
+          final LatLng initialTarget = state.currentPosition.value?.latLng ??
+              const LatLng(24.7136, 46.6753);
+
+          return Scaffold(
+            body: Stack(
+              children: [
+                ValueListenableBuilder<List<Marker>>(
+                  valueListenable: MapService.instance.markers,
+                  builder: (context, markers, _) {
                     return GoogleMap(
-                      mapType: MapType.normal,
-                      polylines: state.polylines,
-                      markers: markers?.toSet() ?? {},
                       initialCameraPosition: CameraPosition(
-                        target: currentPosition.latLng,
-                        zoom: 15,
+                        target: initialTarget,
+                        zoom: 14,
                       ),
+                      myLocationEnabled: false,
+                      myLocationButtonEnabled: false,
+                      zoomControlsEnabled: false,
+                      mapToolbarEnabled: false,
+                      polylines: state.polylines,
+                      markers: markers.toSet(),
                       onMapCreated: state.onMapCreated,
                       onTap: state.onTapMap,
                       onCameraMove: state.onCameraMove,
                     );
-                  }),
-              CustomInfoWindow(
-                controller: MapService.instance!.controller,
-                height: MediaQuery.of(context).size.width * 0.12,
-                width: MediaQuery.of(context).size.width * 0.4,
-                offset: 50,
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(Icons.exit_to_app),
-                      onPressed: () {
-                        AuthService.instance?.logOut();
-                        MapService.instance?.dispose();
-                      },
-                    ),
-                  ),
+                  },
                 ),
-              ),
-              Positioned(
-                bottom: 0,
-                child: BottomSlider(),
-              ),
-              state.rideState == RideState.searchingAddress
-                  ? Positioned(top: 10, left: 15, right: 15, child: SearchMapBar())
-                  : SizedBox.shrink(),
-            ],
+                CustomInfoWindow(
+                  controller: MapService.instance.controller,
+                  height: 90,
+                  width: 220,
+                  offset: 50,
+                ),
+                const Align(
+                  alignment: Alignment.bottomCenter,
+                  child: BottomSlide(),
+                ),
+              ],
+            ),
           );
         },
       ),
-    );
-  }
-}
-
-class MapViewWidget extends StatelessWidget {
-  const MapViewWidget({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final state = MapState();
-    return ChangeNotifierProvider(
-      create: (_) => state,
-      child: MapView(key: ValueKey('map')),
     );
   }
 }

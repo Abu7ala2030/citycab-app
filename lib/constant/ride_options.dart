@@ -4,23 +4,23 @@ import 'package:citycab/utils/icons_assets.dart';
 List<RideOption> rideOptions = [
   RideOption(
     id: '00',
-    title: 'Stardard',
-    timeOfArrival: DateTime.now().add(Duration(minutes: 5)),
-    price: 500,
+    title: 'Standard',
+    timeOfArrival: DateTime.now().add(const Duration(minutes: 5)),
+    price: 0,
     icon: IconsAssets.stardard_car,
   ),
   RideOption(
     id: '01',
     title: 'Premium',
-    timeOfArrival: DateTime.now().add(Duration(minutes: 3)),
-    price: 1000,
+    timeOfArrival: DateTime.now().add(const Duration(minutes: 3)),
+    price: 0,
     icon: IconsAssets.premium_car,
   ),
   RideOption(
     id: '02',
     title: 'VIP',
-    timeOfArrival: DateTime.now().add(Duration(minutes: 2)),
-    price: 2000,
+    timeOfArrival: DateTime.now().add(const Duration(minutes: 2)),
+    price: 0,
     icon: IconsAssets.vip_car,
   ),
 ];
