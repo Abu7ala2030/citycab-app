@@ -80,6 +80,36 @@ class TakeARide extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.timer_outlined,
+                              color: CityTheme.cityblue,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                state.driverDispatchLabel,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: CityTheme.cityblue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'Pickup: ${incomingRide.startAddress.street}, ${incomingRide.startAddress.city}',
