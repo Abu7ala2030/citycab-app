@@ -20,6 +20,35 @@ class ConfirmRide extends StatelessWidget {
     final bool isSearchingDriver = state.rideState == RideState.requestRide &&
         state.assignedDriver == null;
 
+    final int etaMinutes = option == null
+        ? 0
+        : option.timeOfArrival.difference(DateTime.now()).inMinutes;
+
+    String statusLine;
+    if (isSearchingDriver) {
+      statusLine = 'Searching for nearby drivers...';
+    } else if (state.isCalculatingRoute) {
+      statusLine = 'Calculating route...';
+    } else {
+      statusLine = 'Pickup in ${etaMinutes < 0 ? 0 : etaMinutes} mins';
+    }
+
+    String searchingMessage = 'Searching for nearby drivers...';
+    if (isSearchingDriver && state.currentRide != null) {
+      final remaining = state.currentRide!.requestExpiresAt == null
+          ? 0
+          : state.currentRide!.requestExpiresAt!
+              .difference(DateTime.now())
+              .inSeconds;
+
+      if (remaining > 0) {
+        searchingMessage =
+            'Searching for nearby drivers... ${remaining}s remaining in this request window.';
+      } else {
+        searchingMessage = 'Searching for nearby drivers...';
+      }
+    }
+
     return Wrap(
       runAlignment: WrapAlignment.spaceBetween,
       children: [
@@ -31,11 +60,12 @@ class ConfirmRide extends StatelessWidget {
               child: BottomSliderTitle(title: 'CONFIRM RIDE'),
             ),
             const SizedBox(height: 16),
-
-            /// Ride option card
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
               constraints: const BoxConstraints(minHeight: 96),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
@@ -68,8 +98,6 @@ class ConfirmRide extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-
-                        /// Pickup ETA
                         Row(
                           children: [
                             Icon(
@@ -80,7 +108,7 @@ class ConfirmRide extends StatelessWidget {
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
-                                'Pickup in ${option?.timeOfArrival.difference(DateTime.now()).inMinutes ?? 0} mins',
+                                statusLine,
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: CityTheme.cityblue,
@@ -104,10 +132,7 @@ class ConfirmRide extends StatelessWidget {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
-            /// Destination address
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(
@@ -120,7 +145,7 @@ class ConfirmRide extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${endAddress?.street ?? ''}, ${endAddress?.city ?? ''}, ${endAddress?.state ?? ''}, ${endAddress?.country ?? ''}',
+                      state.formatAddressLine(endAddress),
                       style: TextStyle(
                         fontSize: 16,
                         height: 1.5,
@@ -132,21 +157,20 @@ class ConfirmRide extends StatelessWidget {
                 ],
               ),
             ),
-
-            /// Searching driver indicator
             if (isSearchingDriver) ...[
               const SizedBox(height: 20),
-              const Center(
+              Center(
                 child: Column(
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 10),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 10),
                     Text(
-                      'Searching for nearby drivers...',
-                      style: TextStyle(
+                      searchingMessage,
+                      style: const TextStyle(
                         fontSize: 14,
                         color: Colors.grey,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
@@ -154,8 +178,6 @@ class ConfirmRide extends StatelessWidget {
             ],
           ],
         ),
-
-        /// Confirm button
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: CityCabButton(

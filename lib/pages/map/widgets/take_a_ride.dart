@@ -4,6 +4,7 @@ import 'package:citycab/ui/theme.dart';
 import 'package:citycab/ui/widget/buttons/city_cab_button.dart';
 import 'package:citycab/ui/widget/cards/address_card.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 
 import '../map_state.dart';
@@ -16,10 +17,16 @@ class TakeARide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<MapState>();
-    final isUserDriver = state.userRepo.currentUser?.isDriverRole ?? false;
+    final bool isUserDriver = state.isDriverUser;
 
     if (isUserDriver) {
       final Ride? incomingRide = state.incomingRide;
+      final double distanceKm = state.incomingRideDistanceKm;
+      final int etaMinutes = state.incomingRideEtaMinutes;
+      final int secondsRemaining = state.incomingRideSecondsRemaining;
+      final double progress = secondsRemaining <= 0
+          ? 0
+          : (secondsRemaining / 15).clamp(0.0, 1.0).toDouble();
 
       return Padding(
         padding: const EdgeInsets.all(CityTheme.elementSpacing),
@@ -81,22 +88,77 @@ class TakeARide extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Text(
-                        'Pickup: ${incomingRide.startAddress.street}, ${incomingRide.startAddress.city}',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Dropoff: ${incomingRide.endAddress.street}, ${incomingRide.endAddress.city}',
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Fare: ${incomingRide.rideOption.price.toStringAsFixed(2)} SAR',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: CityTheme.cityblue,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          minHeight: 8,
+                          value: progress,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            secondsRemaining <= 5 ? Colors.red : Colors.orange,
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        secondsRemaining > 0
+                            ? 'Accept within ${secondsRemaining}s before the request moves to the next driver.'
+                            : 'Request window is closing...',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: secondsRemaining <= 5
+                              ? Colors.red.shade700
+                              : Colors.orange.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _MetricTile(
+                              label: 'Distance',
+                              value: distanceKm > 0
+                                  ? '${distanceKm.toStringAsFixed(1)} km'
+                                  : '--',
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _MetricTile(
+                              label: 'ETA',
+                              value: etaMinutes > 0 ? '$etaMinutes min' : '--',
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _MetricTile(
+                              label: 'Fare',
+                              value:
+                                  '${incomingRide.rideOption.price.toStringAsFixed(2)} SAR',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Pickup: ${state.formatAddressLine(incomingRide.startAddress)}',
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Drop-off: ${state.formatAddressLine(incomingRide.endAddress)}',
+                      ),
                       const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            state.previewIncomingRideRoute();
+                          },
+                          icon: const Icon(Icons.alt_route),
+                          label: const Text('Preview Route'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -187,6 +249,51 @@ class TakeARide extends StatelessWidget {
                 },
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricTile extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MetricTile({
+    Key? key,
+    required this.label,
+    required this.value,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

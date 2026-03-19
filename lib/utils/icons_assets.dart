@@ -4,4 +4,8 @@ class IconsAssets {
   static const String vip_car = 'assets/icons/vip-car.png';
 }
 
-const car_list = [IconsAssets.stardard_car, IconsAssets.premium_car, IconsAssets.vip_car];
+const car_list = [
+  IconsAssets.stardard_car,
+  IconsAssets.premium_car,
+  IconsAssets.vip_car
+];

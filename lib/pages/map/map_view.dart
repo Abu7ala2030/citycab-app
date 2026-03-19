@@ -64,12 +64,23 @@ class _MapViewState extends State<MapView> {
                       myLocationEnabled: false,
                       myLocationButtonEnabled: false,
                       zoomControlsEnabled: false,
+                      compassEnabled: true,
+                      buildingsEnabled: true,
                       mapToolbarEnabled: false,
+                      padding: const EdgeInsets.only(
+                        top: 110,
+                        left: 20,
+                        right: 20,
+                        bottom: 360,
+                      ),
                       polylines: state.polylines,
                       markers: markers.toSet(),
                       onMapCreated: state.onMapCreated,
                       onTap: state.onTapMap,
-                      onCameraMove: state.onCameraMove,
+                      onCameraMove: (position) {
+                        state.onCameraMove(position);
+                        MapService.instance.controller.onCameraMove?.call();
+                      },
                     );
                   },
                 ),

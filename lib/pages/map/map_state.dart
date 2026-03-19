@@ -52,6 +52,7 @@ class MapState extends ChangeNotifier {
   static const double cameraSidePadding = 60;
   static const double cameraBottomSheetPadding = 320;
   static const double cameraScrollOffset = 140;
+  static const double routeBoundsPadding = 120;
 
   Address? startAddress;
   Address? endAddress;
@@ -59,6 +60,7 @@ class MapState extends ChangeNotifier {
   RideOption? selectedOption;
   Ride? currentRide;
   User? assignedDriver;
+  User? passengerUser;
   Ride? incomingRide;
 
   StreamSubscription<Ride?>? rideSubscription;
@@ -67,7 +69,12 @@ class MapState extends ChangeNotifier {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _driverRequestsSubscription;
   Timer? _driverRouteRefreshTimer;
+  Timer? _liveTrackingTimer;
   Timer? _searchDebounce;
+  String _placesSessionToken = '';
+
+  LatLng? _lastLiveTrackingTarget;
+  bool _isLiveTrackingRefresh = false;
 
   List<Address> searchedAddress = <Address>[];
   List<bool> isSelectedOptions = <bool>[];
@@ -77,6 +84,7 @@ class MapState extends ChangeNotifier {
 
   bool isActive = false;
   bool isCalculatingRoute = false;
+  bool isSearchingAddressResults = false;
   bool isSubmittingRide = false;
   bool isCallingDriver = false;
   bool isPayingForRide = false;
@@ -109,6 +117,14 @@ class MapState extends ChangeNotifier {
     _safeNotify();
     _refreshRideCamera();
     _refreshDriverLegRoute(force: true);
+
+    if (_rideState == RideState.driverIsComing ||
+        _rideState == RideState.inMotion ||
+        _rideState == RideState.arrived) {
+      _startLiveTracking();
+    } else {
+      _stopLiveTracking();
+    }
   }
 
   String? uiMessage;
@@ -121,6 +137,33 @@ class MapState extends ChangeNotifier {
   void clearMessage() {
     uiMessage = null;
     notifyListeners();
+  }
+
+  bool get hasSearchResults => searchedAddress.isNotEmpty;
+
+  bool get isDriverUser => userRepo.currentUserRole == Roles.driver;
+  bool get isPassengerUser => userRepo.currentUserRole == Roles.passenger;
+
+  LatLng? get driverCurrentLatLng {
+    return currentPosition.value?.latLng ??
+        startAddress?.latLng ??
+        assignedDriver?.latlng;
+  }
+
+  void _refreshPlacesSessionToken() {
+    _placesSessionToken = '${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  String formatAddressLine(Address? address) {
+    if (address == null) return '';
+
+    final parts = <String>[
+      address.street.trim(),
+      address.city.trim(),
+      address.country.trim(),
+    ].where((e) => e.isNotEmpty).toList();
+
+    return parts.join(', ');
   }
 
   Future<void> _initUser() async {
@@ -137,6 +180,7 @@ class MapState extends ChangeNotifier {
     selectedOption = rideOptions.isNotEmpty ? rideOptions.first : null;
 
     destinationAddressController.addListener(_onDestinationTextChanged);
+    _refreshPlacesSessionToken();
 
     _initUser();
 
@@ -160,6 +204,40 @@ class MapState extends ChangeNotifier {
       assignedDriver == null &&
       currentRide != null;
 
+  int get incomingRideSecondsRemaining {
+    final expiresAt = incomingRide?.requestExpiresAt;
+    if (expiresAt == null) return 0;
+
+    final seconds = expiresAt.difference(DateTime.now()).inSeconds;
+    return seconds < 0 ? 0 : seconds;
+  }
+
+  double get incomingRideDistanceKm {
+    final LatLng? driverLatLng = driverCurrentLatLng;
+    final LatLng? pickupLatLng = incomingRide?.startAddress.latLng;
+
+    if (driverLatLng == null || pickupLatLng == null) {
+      return 0;
+    }
+
+    final meters = Geolocator.distanceBetween(
+      driverLatLng.latitude,
+      driverLatLng.longitude,
+      pickupLatLng.latitude,
+      pickupLatLng.longitude,
+    );
+
+    return meters / 1000;
+  }
+
+  int get incomingRideEtaMinutes {
+    final distanceKm = incomingRideDistanceKm;
+    if (distanceKm <= 0) return 0;
+
+    final estimatedMinutes = (distanceKm / 0.5).ceil();
+    return estimatedMinutes <= 0 ? 1 : estimatedMinutes;
+  }
+
   int get tripRemainingMinutes {
     if ((_rideState == RideState.driverIsComing ||
             _rideState == RideState.inMotion ||
@@ -180,15 +258,20 @@ class MapState extends ChangeNotifier {
       return driverLegDuration.inMinutes <= 0 ? 1 : driverLegDuration.inMinutes;
     }
 
-    if (assignedDriver?.latlng == null || startAddress == null) {
+    final driverLatLng =
+        isDriverUser ? driverCurrentLatLng : assignedDriver?.latlng;
+    final pickupLatLng =
+        isDriverUser ? currentRide?.startAddress.latLng : startAddress?.latLng;
+
+    if (driverLatLng == null || pickupLatLng == null) {
       return 0;
     }
 
     final meters = Geolocator.distanceBetween(
-      assignedDriver!.latlng!.latitude,
-      assignedDriver!.latlng!.longitude,
-      startAddress!.latLng.latitude,
-      startAddress!.latLng.longitude,
+      driverLatLng.latitude,
+      driverLatLng.longitude,
+      pickupLatLng.latitude,
+      pickupLatLng.longitude,
     );
 
     final estimatedMinutes = (meters / 1000) / 0.5;
@@ -197,13 +280,17 @@ class MapState extends ChangeNotifier {
   }
 
   double get tripDistanceKm {
-    if (startAddress == null || endAddress == null) return 0;
+    final pickupLatLng =
+        currentRide?.startAddress.latLng ?? startAddress?.latLng;
+    final dropoffLatLng = currentRide?.endAddress.latLng ?? endAddress?.latLng;
+
+    if (pickupLatLng == null || dropoffLatLng == null) return 0;
 
     final meters = Geolocator.distanceBetween(
-      startAddress!.latLng.latitude,
-      startAddress!.latLng.longitude,
-      endAddress!.latLng.latitude,
-      endAddress!.latLng.longitude,
+      pickupLatLng.latitude,
+      pickupLatLng.longitude,
+      dropoffLatLng.latitude,
+      dropoffLatLng.longitude,
     );
 
     return meters / 1000;
@@ -218,27 +305,37 @@ class MapState extends ChangeNotifier {
     }
 
     if (_rideState == RideState.driverIsComing) {
-      if (assignedDriver?.latlng == null || startAddress == null) return 0;
+      final driverLatLng =
+          isDriverUser ? driverCurrentLatLng : assignedDriver?.latlng;
+      final pickupLatLng = isDriverUser
+          ? currentRide?.startAddress.latLng
+          : startAddress?.latLng;
+
+      if (driverLatLng == null || pickupLatLng == null) return 0;
 
       final meters = Geolocator.distanceBetween(
-        assignedDriver!.latlng!.latitude,
-        assignedDriver!.latlng!.longitude,
-        startAddress!.latLng.latitude,
-        startAddress!.latLng.longitude,
+        driverLatLng.latitude,
+        driverLatLng.longitude,
+        pickupLatLng.latitude,
+        pickupLatLng.longitude,
       );
 
       return meters / 1000;
     }
 
-    if (assignedDriver?.latlng == null || endAddress == null) {
+    final driverLatLng =
+        isDriverUser ? driverCurrentLatLng : assignedDriver?.latlng;
+    final dropoffLatLng = currentRide?.endAddress.latLng ?? endAddress?.latLng;
+
+    if (driverLatLng == null || dropoffLatLng == null) {
       return tripDistanceKm;
     }
 
     final meters = Geolocator.distanceBetween(
-      assignedDriver!.latlng!.latitude,
-      assignedDriver!.latlng!.longitude,
-      endAddress!.latLng.latitude,
-      endAddress!.latLng.longitude,
+      driverLatLng.latitude,
+      driverLatLng.longitude,
+      dropoffLatLng.latitude,
+      dropoffLatLng.longitude,
     );
 
     return meters / 1000;
@@ -307,6 +404,69 @@ class MapState extends ChangeNotifier {
     return lines;
   }
 
+  LatLng? get _activeDriverRouteTarget {
+    if (_rideState == RideState.driverIsComing) {
+      return isDriverUser
+          ? currentRide?.startAddress.latLng
+          : startAddress?.latLng;
+    }
+
+    if (_rideState == RideState.inMotion || _rideState == RideState.arrived) {
+      return currentRide?.endAddress.latLng ?? endAddress?.latLng;
+    }
+
+    return null;
+  }
+
+  void _startLiveTracking() {
+    _liveTrackingTimer?.cancel();
+
+    _liveTrackingTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) {
+        unawaited(_refreshLiveTracking());
+      },
+    );
+  }
+
+  void _stopLiveTracking() {
+    _liveTrackingTimer?.cancel();
+    _liveTrackingTimer = null;
+    _lastLiveTrackingTarget = null;
+  }
+
+  Future<void> _refreshLiveTracking() async {
+    if (_isLiveTrackingRefresh) return;
+
+    final LatLng? target = _activeDriverRouteTarget;
+    if (target == null) return;
+
+    if (_lastLiveTrackingTarget != null) {
+      final targetShiftMeters = Geolocator.distanceBetween(
+        _lastLiveTrackingTarget!.latitude,
+        _lastLiveTrackingTarget!.longitude,
+        target.latitude,
+        target.longitude,
+      );
+
+      if (targetShiftMeters < 5 && !isUpdatingDriverRoute) {
+        await _refreshDriverLegRoute();
+        await _refreshRideCamera();
+        return;
+      }
+    }
+
+    _isLiveTrackingRefresh = true;
+    try {
+      await _refreshLiveTracking();
+      await _refreshRideCamera();
+      _lastLiveTrackingTarget = target;
+    } finally {
+      _isLiveTrackingRefresh = false;
+    }
+  }
+
+
   void _listenToDriverRequests() {
     _driverRequestsSubscription?.cancel();
 
@@ -345,10 +505,12 @@ class MapState extends ChangeNotifier {
 
     incomingRide = null;
     currentRide = ride;
+    endAddress = ride.endAddress;
 
     _listenToRide(ride.id);
 
     await loadDriverProfile(currentUID);
+    await loadPassengerProfile(ride.ownerUID);
     await _refreshDriverLegRoute(force: true);
 
     _safeNotify();
@@ -360,6 +522,7 @@ class MapState extends ChangeNotifier {
 
     await rideRepo?.driverRejectRide(ride.id, currentUID);
     incomingRide = null;
+    _resetDriverLegData();
     _safeNotify();
   }
 
@@ -369,6 +532,7 @@ class MapState extends ChangeNotifier {
       endAddress = null;
       _clearRideState(resetRide: true);
       _resetRidePrices();
+      _refreshPlacesSessionToken();
       _safeNotify();
       _refreshRideCamera();
     }
@@ -386,8 +550,10 @@ class MapState extends ChangeNotifier {
     _cancelAssignedDriverListener();
     _driverRouteRefreshTimer?.cancel();
     _driverRouteRefreshTimer = null;
+    _stopLiveTracking();
 
     assignedDriver = null;
+    passengerUser = null;
     _lastDriverCameraTarget = null;
     isCallingDriver = false;
     isPayingForRide = false;
@@ -505,7 +671,7 @@ class MapState extends ChangeNotifier {
   Future<void> animateCameraToBoundsSmart({
     required LatLng first,
     required LatLng second,
-    double extraPadding = 1,
+    double extraPadding = routeBoundsPadding,
   }) async {
     if (controller == null || _isAdjustingCamera) return;
 
@@ -579,9 +745,9 @@ class MapState extends ChangeNotifier {
   Future<void> _refreshRideCamera() async {
     if (controller == null) return;
 
-    final passenger = startAddress?.latLng;
-    final destination = endAddress?.latLng;
-    final driver = assignedDriver?.latlng;
+    final passenger = currentRide?.startAddress.latLng ?? startAddress?.latLng;
+    final destination = currentRide?.endAddress.latLng ?? endAddress?.latLng;
+    final driver = isDriverUser ? driverCurrentLatLng : assignedDriver?.latlng;
 
     try {
       switch (_rideState) {
@@ -669,14 +835,17 @@ class MapState extends ChangeNotifier {
   }
 
   Future<void> _refreshDriverLegRoute({bool force = false}) async {
-    final LatLng? origin = assignedDriver?.latlng;
+    final LatLng? origin =
+        isDriverUser ? driverCurrentLatLng : assignedDriver?.latlng;
 
     LatLng? destination;
     if (_rideState == RideState.driverIsComing) {
-      destination = startAddress?.latLng;
+      destination = isDriverUser
+          ? currentRide?.startAddress.latLng
+          : startAddress?.latLng;
     } else if (_rideState == RideState.inMotion ||
         _rideState == RideState.arrived) {
-      destination = endAddress?.latLng;
+      destination = currentRide?.endAddress.latLng ?? endAddress?.latLng;
     }
 
     if (origin == null || destination == null) {
@@ -724,7 +893,7 @@ class MapState extends ChangeNotifier {
     _driverRouteRefreshTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) {
-        _refreshDriverLegRoute();
+        unawaited(_refreshLiveTracking());
       },
     );
   }
@@ -746,8 +915,22 @@ class MapState extends ChangeNotifier {
       await _refreshRideCamera();
       await _refreshDriverLegRoute(force: true);
       _startDriverRouteRefreshTimer();
+      _startLiveTracking();
     } catch (e) {
       debugPrint('Driver load failed: $e');
+    }
+  }
+
+  Future<void> loadPassengerProfile(String passengerUID) async {
+    if (passengerUID.trim().isEmpty) return;
+
+    try {
+      final passenger = await userRepo.fetchUserById(passengerUID);
+      if (passenger == null) return;
+      passengerUser = passenger;
+      _safeNotify();
+    } catch (e) {
+      debugPrint('Passenger load failed: $e');
     }
   }
 
@@ -775,8 +958,21 @@ class MapState extends ChangeNotifier {
 
         if (shouldUpdateMarker) {
           await MapService.instance.addOrUpdateDriverMarker(driver);
-          await _refreshDriverLegRoute();
-          await _refreshRideCamera();
+          await _refreshLiveTracking();
+
+          if (_rideState == RideState.inMotion && currentRide?.endAddress.latLng != null) {
+            final destination = currentRide!.endAddress.latLng;
+            final metersToDestination = Geolocator.distanceBetween(
+              driver.latlng!.latitude,
+              driver.latlng!.longitude,
+              destination.latitude,
+              destination.longitude,
+            );
+
+            if (metersToDestination <= 40 && currentRide?.status == RideStatus.moving) {
+              unawaited(driverArriveAtDestination());
+            }
+          }
         }
       }
 
@@ -815,8 +1011,10 @@ class MapState extends ChangeNotifier {
             _safeNotify();
             await _refreshRideCamera();
 
-            if (_rideState == RideState.driverIsComing) {
-              await _refreshDriverLegRoute(force: true);
+            if (_rideState == RideState.driverIsComing ||
+                _rideState == RideState.inMotion ||
+                _rideState == RideState.arrived) {
+              await _refreshLiveTracking();
             }
           },
         ).listen((_) {});
@@ -898,43 +1096,38 @@ class MapState extends ChangeNotifier {
   Future<void> searchAddress(String query) async {
     _searchDebounce?.cancel();
 
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
-      final trimmed = query.trim();
+    final trimmed = query.trim();
 
-      if (trimmed.length < 3) {
-        searchedAddress = <Address>[];
-        _safeNotify();
-        return;
-      }
+    if (trimmed.length < 3) {
+      searchedAddress = <Address>[];
+      isSearchingAddressResults = false;
+      _safeNotify();
+      return;
+    }
 
+    isSearchingAddressResults = true;
+    _safeNotify();
+
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
       try {
-        final results = await MapService.instance.getAddressFromQuery(trimmed);
+        if (_placesSessionToken.isEmpty) {
+          _refreshPlacesSessionToken();
+        }
 
-        final filtered = results.where((q) {
-          final input = trimmed.toLowerCase();
+        final results = await MapService.instance.getAddressFromQuery(
+          trimmed,
+          locationBias: currentPosition.value?.latLng,
+          sessionToken: _placesSessionToken,
+        );
 
-          final street = q.street.toLowerCase();
-          final city = q.city.toLowerCase();
-          final state = q.state.toLowerCase();
-          final country = q.country.toLowerCase();
-          final postcode = q.postcode.toLowerCase();
-
-          return street.contains(input) ||
-              city.contains(input) ||
-              state.contains(input) ||
-              country.contains(input) ||
-              postcode.contains(input) ||
-              input.contains(street) ||
-              input.contains(city);
-        }).toList();
-
-        searchedAddress = filtered.isNotEmpty ? filtered : results;
+        searchedAddress = results;
       } catch (e) {
         debugPrint('searchAddress error: $e');
         searchedAddress = <Address>[];
+      } finally {
+        isSearchingAddressResults = false;
+        _safeNotify();
       }
-
-      _safeNotify();
     });
   }
 
@@ -959,29 +1152,55 @@ class MapState extends ChangeNotifier {
   Future<void> onTapAddressList(Address address) async {
     focusNode?.unfocus();
 
-    destinationAddressController.text =
-        _addressText(address.street, address.city);
-    endAddress = address;
-    searchedAddress = <Address>[];
-    assignedDriver = null;
-    _cancelAssignedDriverListener();
-    _driverRouteRefreshTimer?.cancel();
-    MapService.instance.removeDriverMarker();
-    _lastDriverCameraTarget = null;
-    _resetDriverLegData();
+    isSearchingAddressResults = true;
     _safeNotify();
 
-    final currentLatLng = MapService.instance.currentPosition.value?.latLng;
-    if (currentLatLng != null) {
-      await loadRouteCoordinates(currentLatLng, address.latLng);
-    } else {
-      updateRidePrices();
+    try {
+      final Address resolvedAddress;
+
+      if (address.latLng.latitude == 0 && address.latLng.longitude == 0) {
+        final details = await MapService.instance.getPlaceDetails(
+          address.id,
+          sessionToken: _placesSessionToken,
+        );
+
+        if (details == null) {
+          showMessage('Unable to load the selected destination.');
+          return;
+        }
+
+        resolvedAddress = details;
+      } else {
+        resolvedAddress = address;
+      }
+
+      destinationAddressController.text = formatAddressLine(resolvedAddress);
+      endAddress = resolvedAddress;
+      searchedAddress = <Address>[];
+      assignedDriver = null;
+      _cancelAssignedDriverListener();
+      _driverRouteRefreshTimer?.cancel();
+      MapService.instance.removeDriverMarker();
+      _lastDriverCameraTarget = null;
+      _resetDriverLegData();
+      _safeNotify();
+
+      final currentLatLng = MapService.instance.currentPosition.value?.latLng;
+      if (currentLatLng != null) {
+        await loadRouteCoordinates(currentLatLng, resolvedAddress.latLng);
+      } else {
+        updateRidePrices();
+      }
+
+      await animateCamera(resolvedAddress.latLng);
+      await _refreshRideCamera();
+
+      _refreshPlacesSessionToken();
+      changeRideState = RideState.selectRide;
+    } finally {
+      isSearchingAddressResults = false;
+      _safeNotify();
     }
-
-    await animateCamera(address.latLng);
-    await _refreshRideCamera();
-
-    changeRideState = RideState.selectRide;
   }
 
   Future<void> onTapMyAddresses(Address address) async {
@@ -1084,12 +1303,20 @@ class MapState extends ChangeNotifier {
       if (rideUpdate == null) return;
 
       currentRide = rideUpdate;
+      endAddress = rideUpdate.endAddress;
 
       if (rideUpdate.driverUID.isNotEmpty) {
         if (assignedDriver == null ||
             assignedDriver!.uid != rideUpdate.driverUID) {
           await loadDriverProfile(rideUpdate.driverUID);
           _listenToAssignedDriver(rideUpdate.driverUID);
+        }
+      }
+
+      if (rideUpdate.ownerUID.isNotEmpty) {
+        if (passengerUser == null ||
+            passengerUser!.uid != rideUpdate.ownerUID) {
+          await loadPassengerProfile(rideUpdate.ownerUID);
         }
       }
 
@@ -1218,6 +1445,122 @@ class MapState extends ChangeNotifier {
     animateToPage(pageIndex: 0, state: RideState.initial);
   }
 
+  Future<void> previewIncomingRideRoute() async {
+    final LatLng? driverLatLng = driverCurrentLatLng;
+    final LatLng? pickupLatLng = incomingRide?.startAddress.latLng;
+
+    if (driverLatLng == null || pickupLatLng == null) {
+      showMessage('Pickup preview is not available yet.');
+      return;
+    }
+
+    try {
+      isUpdatingDriverRoute = true;
+      _safeNotify();
+
+      final routeData = await MapService.instance.getRouteData(
+        driverLatLng,
+        pickupLatLng,
+      );
+
+      driverLegDuration = routeData.duration;
+      driverLegDistanceKm = routeData.distanceMeters / 1000;
+      driverLegPolylinePoints = routeData.polylines
+          .map((e) => LatLng(e.latitude, e.longitude))
+          .toList();
+
+      _lastDriverRouteOrigin = driverLatLng;
+      _lastDriverRouteDestination = pickupLatLng;
+      _lastLiveTrackingTarget = pickupLatLng;
+
+      await animateCameraToBoundsSmart(
+        first: driverLatLng,
+        second: pickupLatLng,
+      );
+
+      showMessage('Previewing route to pickup.');
+    } catch (e) {
+      debugPrint('previewIncomingRideRoute error: $e');
+      showMessage('Could not preview the pickup route.');
+    } finally {
+      isUpdatingDriverRoute = false;
+      _safeNotify();
+    }
+  }
+
+  Future<void> driverShowRouteToPickup() async {
+    if (!isDriverUser) return;
+
+    final LatLng? driverLatLng = driverCurrentLatLng;
+    final LatLng? pickupLatLng = currentRide?.startAddress.latLng;
+
+    if (driverLatLng == null || pickupLatLng == null) {
+      showMessage('Pickup route is not available yet.');
+      return;
+    }
+
+    changeRideState = RideState.driverIsComing;
+
+    _startLiveTracking();
+    await _refreshLiveTracking();
+
+    await animateCameraToBoundsSmart(
+      first: driverLatLng,
+      second: pickupLatLng,
+    );
+
+    showMessage('Route to passenger loaded.');
+  }
+
+  Future<void> driverStartTrip() async {
+    final rideId = currentRide?.id;
+    if (rideId == null || rideId.isEmpty) return;
+
+    try {
+      await rideRepo?.startRide(rideId);
+      changeRideState = RideState.inMotion;
+      _startLiveTracking();
+      await _refreshLiveTracking();
+      await _refreshRideCamera();
+    } catch (e) {
+      debugPrint('driverStartTrip error: $e');
+      showMessage('Could not start the trip.');
+    }
+  }
+
+  Future<void> driverArriveAtDestination() async {
+    final rideId = currentRide?.id;
+    if (rideId == null || rideId.isEmpty) return;
+
+    try {
+      await rideRepo?.arriveRide(rideId);
+      changeRideState = RideState.arrived;
+      _startLiveTracking();
+      await _refreshLiveTracking();
+      await _refreshRideCamera();
+    } catch (e) {
+      debugPrint('driverArriveAtDestination error: $e');
+      showMessage('Could not update trip status.');
+    }
+  }
+
+  Future<void> driverCompleteRide() async {
+    final rideId = currentRide?.id;
+    if (rideId == null || rideId.isEmpty) return;
+
+    try {
+      await rideRepo?.completeRide(rideId);
+      showMessage('Ride completed successfully.');
+      rideSubscription?.cancel();
+      _stopLiveTracking();
+      _clearRideState(resetRide: true);
+      animateToPage(pageIndex: 0, state: RideState.initial);
+    } catch (e) {
+      debugPrint('driverCompleteRide error: $e');
+      showMessage('Could not complete the ride.');
+    }
+  }
+
   Future<void> payForRide() async {
     if (isPayingForRide) return;
 
@@ -1274,6 +1617,7 @@ class MapState extends ChangeNotifier {
 
       showMessage('Thanks for your feedback.');
       rideSubscription?.cancel();
+      _stopLiveTracking();
       _clearRideState(resetRide: true);
       animateToPage(pageIndex: 0, state: RideState.initial);
     } catch (_) {
@@ -1329,6 +1673,51 @@ class MapState extends ChangeNotifier {
     }
   }
 
+  Future<void> callPassenger() async {
+    if (passengerUser == null) {
+      showMessage('No passenger to call.');
+      return;
+    }
+
+    final String phone = passengerUser!.phone.trim();
+
+    if (phone.isEmpty) {
+      showMessage('Passenger phone number is missing.');
+      return;
+    }
+
+    final Uri telUri = Uri(
+      scheme: 'tel',
+      path: phone,
+    );
+
+    try {
+      isCallingDriver = true;
+      _safeNotify();
+
+      final bool supported = await canLaunchUrl(telUri);
+
+      if (!supported) {
+        showMessage('Dialer not available on this device.');
+        return;
+      }
+
+      final bool launched = await launchUrl(
+        telUri,
+        mode: LaunchMode.platformDefault,
+      );
+
+      if (!launched) {
+        showMessage('Could not open the dialer.');
+      }
+    } catch (_) {
+      showMessage('Failed to start phone call.');
+    } finally {
+      isCallingDriver = false;
+      _safeNotify();
+    }
+  }
+
   Future<void> cancelRide() async {
     try {
       final rideId = currentRide?.id;
@@ -1340,6 +1729,7 @@ class MapState extends ChangeNotifier {
       showMessage('Could not cancel the ride.');
     } finally {
       rideSubscription?.cancel();
+      _stopLiveTracking();
       _clearRideState(resetRide: true);
       animateToPage(pageIndex: 0, state: RideState.initial);
       await _refreshRideCamera();
@@ -1378,6 +1768,7 @@ class MapState extends ChangeNotifier {
     assignedDriverSubscription?.cancel();
     _driverRequestsSubscription?.cancel();
     _driverRouteRefreshTimer?.cancel();
+    _liveTrackingTimer?.cancel();
 
     currentAddressController.dispose();
     destinationAddressController.removeListener(_onDestinationTextChanged);

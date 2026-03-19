@@ -38,7 +38,8 @@ class CityCabButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: _getColour(),
           border: Border.all(
-            color: (isLoading ? Colors.transparent : borderColor) ?? Colors.transparent,
+            color: (isLoading ? Colors.transparent : borderColor) ??
+                Colors.transparent,
           ),
           borderRadius: BorderRadius.all(Radius.circular(10)),
         ),

@@ -69,13 +69,20 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
 
   /// Calculate the position on [CustomInfoWindow] and redraw on screen.
   void _updateInfoWindow() async {
-    if (_latLng == null || _child == null || widget.controller.googleMapController == null) {
+    if (_latLng == null ||
+        _child == null ||
+        widget.controller.googleMapController == null) {
       return;
     }
-    ScreenCoordinate screenCoordinate = await widget.controller.googleMapController!.getScreenCoordinate(_latLng!);
-    double devicePixelRatio = Platform.isAndroid ? MediaQuery.of(context).devicePixelRatio : 1.0;
-    double left = (screenCoordinate.x.toDouble() / devicePixelRatio) - (widget.width / 2);
-    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) - (widget.offset + widget.height);
+    ScreenCoordinate screenCoordinate = await widget
+        .controller.googleMapController!
+        .getScreenCoordinate(_latLng!);
+    double devicePixelRatio =
+        Platform.isAndroid ? MediaQuery.of(context).devicePixelRatio : 1.0;
+    double left =
+        (screenCoordinate.x.toDouble() / devicePixelRatio) - (widget.width / 2);
+    double top = (screenCoordinate.y.toDouble() / devicePixelRatio) -
+        (widget.offset + widget.height);
     setState(() {
       _showNow = true;
       _leftMargin = left;
@@ -109,7 +116,10 @@ class _CustomInfoWindowState extends State<CustomInfoWindow> {
       left: _leftMargin,
       top: _topMargin,
       child: Visibility(
-        visible: (_showNow == false || (_leftMargin == 0 && _topMargin == 0) || _child == null || _latLng == null)
+        visible: (_showNow == false ||
+                (_leftMargin == 0 && _topMargin == 0) ||
+                _child == null ||
+                _latLng == null)
             ? false
             : true,
         child: Container(

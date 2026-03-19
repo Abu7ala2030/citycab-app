@@ -12,9 +12,8 @@ import 'package:provider/provider.dart';
 class BottomSlide extends StatelessWidget {
   const BottomSlide({Key? key}) : super(key: key);
 
-  static const BorderRadius _radius = BorderRadius.vertical(
-    top: Radius.circular(24),
-  );
+  static const BorderRadius _radius =
+      BorderRadius.vertical(top: Radius.circular(24));
 
   @override
   Widget build(BuildContext context) {
@@ -32,10 +31,7 @@ class BottomSlide extends StatelessWidget {
         borderRadius: _radius,
         boxShadow: [
           BoxShadow(
-            blurRadius: 18,
-            color: Color(0x22000000),
-            offset: Offset(0, -4),
-          ),
+              blurRadius: 18, color: Color(0x22000000), offset: Offset(0, -4)),
         ],
       ),
       child: ClipRRect(
@@ -44,17 +40,14 @@ class BottomSlide extends StatelessWidget {
           top: false,
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              16,
-              16,
-              16,
-              viewPadding.bottom > 0 ? 12 : 20,
-            ),
+                16, 16, 16, viewPadding.bottom > 0 ? 12 : 20),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 220),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
               child: KeyedSubtree(
-                key: ValueKey<RideState>(state.rideState),
+                key: ValueKey<String>(
+                    '${state.rideState.name}-${state.isDriverUser}'),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: _buildCurrentPanel(state),
@@ -69,23 +62,28 @@ class BottomSlide extends StatelessWidget {
 
   double _getSliderHeight(MapState state, Size size) {
     final bool isSmallPhone = size.height < 700;
+    final bool isDriver = state.isDriverUser;
 
     switch (state.rideState) {
       case RideState.searchingAddress:
         return isSmallPhone ? size.height * 0.62 : size.height * 0.58;
-
       case RideState.confirmAddress:
       case RideState.selectRide:
         return isSmallPhone ? size.height * 0.48 : size.height * 0.42;
-
       case RideState.requestRide:
-        return isSmallPhone ? size.height * 0.48 : size.height * 0.42;
-
+        return isSmallPhone ? size.height * 0.52 : size.height * 0.46;
       case RideState.driverIsComing:
+        return isDriver
+            ? (isSmallPhone ? size.height * 0.58 : size.height * 0.50)
+            : (isSmallPhone ? size.height * 0.54 : size.height * 0.46);
       case RideState.inMotion:
+        return isDriver
+            ? (isSmallPhone ? size.height * 0.56 : size.height * 0.48)
+            : (isSmallPhone ? size.height * 0.52 : size.height * 0.45);
       case RideState.arrived:
-        return isSmallPhone ? size.height * 0.50 : size.height * 0.44;
-
+        return isDriver
+            ? (isSmallPhone ? size.height * 0.60 : size.height * 0.52)
+            : (isSmallPhone ? size.height * 0.62 : size.height * 0.56);
       case RideState.initial:
         return isSmallPhone ? size.height * 0.42 : size.height * 0.38;
     }

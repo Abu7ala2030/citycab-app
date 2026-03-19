@@ -24,7 +24,7 @@ class RideRepository {
   ];
 
   static const Duration _driverSearchRetryDelay = Duration(milliseconds: 800);
-  static const Duration _driverRequestTimeout = Duration(seconds: 20);
+  static const Duration _driverRequestTimeout = Duration(seconds: 15);
   static const int _maxDriversPerWave = 3;
 
   final CollectionReference<Map<String, dynamic>> _firestoreRideCollection =
@@ -63,6 +63,63 @@ class RideRepository {
     });
   }
 
+  Stream<Ride?> listenToActivePassengerRide(String ownerUID) {
+    if (ownerUID.trim().isEmpty) {
+      return Stream<Ride?>.value(null);
+    }
+
+    return _firestoreRideCollection
+        .where('owner_uid', isEqualTo: ownerUID)
+        .where(
+          'status',
+          whereIn: <int>[
+            RideStatus.requesting.index,
+            RideStatus.accepted.index,
+            RideStatus.moving.index,
+            RideStatus.arrived.index,
+          ],
+        )
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+
+          final rides = snapshot.docs
+              .map((doc) => Ride.fromMap(doc.data()))
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+          return rides.first;
+        });
+  }
+
+  Stream<Ride?> listenToActiveDriverRide(String driverUID) {
+    if (driverUID.trim().isEmpty) {
+      return Stream<Ride?>.value(null);
+    }
+
+    return _firestoreRideCollection
+        .where('driver_uid', isEqualTo: driverUID)
+        .where(
+          'status',
+          whereIn: <int>[
+            RideStatus.accepted.index,
+            RideStatus.moving.index,
+            RideStatus.arrived.index,
+          ],
+        )
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+
+          final rides = snapshot.docs
+              .map((doc) => Ride.fromMap(doc.data()))
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+          return rides.first;
+        });
+  }
+
   Future<List<Ride>> loadAllUserRides(String ownerUID) async {
     try {
       final subscription = _firestoreRideCollection
@@ -96,7 +153,6 @@ class RideRepository {
     }
 
     ridesNotifier.value = updated;
-    ridesNotifier.notifyListeners();
   }
 
   void _upsertRide(Ride ride) {
@@ -110,7 +166,6 @@ class RideRepository {
     }
 
     ridesNotifier.value = updated;
-    ridesNotifier.notifyListeners();
   }
 
   Future<Ride?> cancelRide(String id) async {
@@ -213,6 +268,7 @@ class RideRepository {
         if (ride.driverUID.isNotEmpty) return;
         if (ride.status != RideStatus.requesting) return;
         if (!ride.candidateDriverUIDs.contains(driverUID)) return;
+        if (ride.isRequestExpired) return;
 
         transaction.update(ref, {
           'driver_uid': driverUID,
@@ -246,14 +302,19 @@ class RideRepository {
       await _firestoreRideCollection.doc(rideId).update({
         'rejected_driver_uids': updatedRejected,
         'candidate_driver_uids': updatedCandidates,
+        'request_expires_at': updatedCandidates.isEmpty
+            ? null
+            : ride.requestExpiresAt != null
+                ? Timestamp.fromDate(ride.requestExpiresAt!)
+                : null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (updatedCandidates.isEmpty && ride.driverUID.isEmpty) {
+      if (ride.driverUID.isEmpty && updatedCandidates.isEmpty) {
         unawaited(
           _broadcastRideRequest(
             rideId,
-            waveIndex: ride.searchWave + 1,
+            waveIndex: ride.searchWave < 0 ? 0 : ride.searchWave,
           ),
         );
       }
@@ -279,88 +340,32 @@ class RideRepository {
         return;
       }
 
-      if (waveIndex >= _driverSearchRadiusStepsMeters.length) {
+      final _DispatchCandidateResult? nextCandidate =
+          await _findNextDriverCandidates(
+        ride: ride,
+        waveIndex: waveIndex,
+      );
+
+      if (nextCandidate == null) {
         await _markRideExpired(rideId);
         return;
       }
-
-      final driversSnapshot = await _firestoreUsersCollection
-          .where('role', isEqualTo: 1)
-          .where('is_active', isEqualTo: true)
-          .get();
-
-      if (driversSnapshot.docs.isEmpty) {
-        await _markRideExpired(rideId);
-        return;
-      }
-
-      final radius = _driverSearchRadiusStepsMeters[waveIndex];
-      final rejected = ride.rejectedDriverUIDs.toSet();
-
-      final List<_DriverCandidate> nearbyDrivers = <_DriverCandidate>[];
-
-      for (final doc in driversSnapshot.docs) {
-        final data = doc.data();
-
-        if (doc.id == ride.ownerUID) continue;
-        if (rejected.contains(doc.id)) continue;
-
-        final coords = _extractDriverCoordinates(data);
-        if (coords == null) continue;
-
-        final lat = coords['lat']!;
-        final lng = coords['lng']!;
-
-        if (lat == 0.0 && lng == 0.0) continue;
-
-        final distance = Geolocator.distanceBetween(
-          ride.startAddress.latLng.latitude,
-          ride.startAddress.latLng.longitude,
-          lat,
-          lng,
-        );
-
-        if (distance > radius) continue;
-
-        nearbyDrivers.add(
-          _DriverCandidate(
-            uid: doc.id,
-            distanceMeters: distance,
-          ),
-        );
-      }
-
-      nearbyDrivers.sort((a, b) {
-        return a.distanceMeters.compareTo(b.distanceMeters);
-      });
-
-      if (nearbyDrivers.isEmpty) {
-        await Future<void>.delayed(_driverSearchRetryDelay);
-        await _broadcastRideRequest(
-          rideId,
-          waveIndex: waveIndex + 1,
-        );
-        return;
-      }
-
-      final selectedCandidates =
-          nearbyDrivers.take(_maxDriversPerWave).map((e) => e.uid).toList();
 
       final expiresAt = DateTime.now().add(_driverRequestTimeout);
 
       await _firestoreRideCollection.doc(rideId).update({
         'status': RideStatus.requesting.index,
-        'candidate_driver_uids': selectedCandidates,
+        'candidate_driver_uids': nextCandidate.driverUIDs,
         'request_expires_at': Timestamp.fromDate(expiresAt),
-        'search_wave': waveIndex,
+        'search_wave': nextCandidate.waveIndex,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       unawaited(
         _handleRequestTimeout(
           rideId: rideId,
-          waveIndex: waveIndex,
-          candidateUIDs: selectedCandidates,
+          waveIndex: nextCandidate.waveIndex,
+          candidateUIDs: nextCandidate.driverUIDs,
         ),
       );
     } on FirebaseException catch (e) {
@@ -370,6 +375,93 @@ class RideRepository {
       debugPrint('_broadcastRideRequest unexpected error: $e');
       await _markRideExpired(rideId);
     }
+  }
+
+  Future<_DispatchCandidateResult?> _findNextDriverCandidates({
+    required Ride ride,
+    required int waveIndex,
+  }) async {
+    int searchIndex = waveIndex < 0 ? 0 : waveIndex;
+
+    while (searchIndex < _driverSearchRadiusStepsMeters.length) {
+      final List<_DriverCandidate> candidates = await _loadNearbyDrivers(
+        ride: ride,
+        radiusMeters: _driverSearchRadiusStepsMeters[searchIndex],
+      );
+
+      if (candidates.isNotEmpty) {
+        final selectedDrivers =
+            candidates.take(_maxDriversPerWave).map((e) => e.uid).toList();
+
+        return _DispatchCandidateResult(
+          driverUIDs: selectedDrivers,
+          waveIndex: searchIndex,
+        );
+      }
+
+      await Future<void>.delayed(_driverSearchRetryDelay);
+      searchIndex++;
+    }
+
+    return null;
+  }
+
+  Future<List<_DriverCandidate>> _loadNearbyDrivers({
+    required Ride ride,
+    required double radiusMeters,
+  }) async {
+    final driversSnapshot = await _firestoreUsersCollection
+        .where('role', isEqualTo: 1)
+        .where('is_active', isEqualTo: true)
+        .get();
+
+    if (driversSnapshot.docs.isEmpty) {
+      return <_DriverCandidate>[];
+    }
+
+    final excludedDriverUIDs = <String>{
+      ...ride.rejectedDriverUIDs,
+      ...ride.candidateDriverUIDs,
+    };
+
+    final List<_DriverCandidate> nearbyDrivers = <_DriverCandidate>[];
+
+    for (final doc in driversSnapshot.docs) {
+      final data = doc.data();
+
+      if (doc.id == ride.ownerUID) continue;
+      if (excludedDriverUIDs.contains(doc.id)) continue;
+
+      final coords = _extractDriverCoordinates(data);
+      if (coords == null) continue;
+
+      final lat = coords['lat']!;
+      final lng = coords['lng']!;
+
+      if (lat == 0.0 && lng == 0.0) continue;
+
+      final distance = Geolocator.distanceBetween(
+        ride.startAddress.latLng.latitude,
+        ride.startAddress.latLng.longitude,
+        lat,
+        lng,
+      );
+
+      if (distance > radiusMeters) continue;
+
+      nearbyDrivers.add(
+        _DriverCandidate(
+          uid: doc.id,
+          distanceMeters: distance,
+        ),
+      );
+    }
+
+    nearbyDrivers.sort((a, b) {
+      return a.distanceMeters.compareTo(b.distanceMeters);
+    });
+
+    return nearbyDrivers;
   }
 
   Future<void> _handleRequestTimeout({
@@ -387,9 +479,15 @@ class RideRepository {
       if (ride.status != RideStatus.requesting) return;
       if (ride.searchWave != waveIndex) return;
 
+      final remainingCandidates = ride.candidateDriverUIDs
+          .where((uid) => candidateUIDs.contains(uid))
+          .toList();
+
+      if (remainingCandidates.isEmpty) return;
+
       final rejected = <String>{
         ...ride.rejectedDriverUIDs,
-        ...candidateUIDs,
+        ...remainingCandidates,
       }.toList();
 
       await _firestoreRideCollection.doc(rideId).update({
@@ -399,14 +497,9 @@ class RideRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (waveIndex + 1 >= _driverSearchRadiusStepsMeters.length) {
-        await _markRideExpired(rideId);
-        return;
-      }
-
       await _broadcastRideRequest(
         rideId,
-        waveIndex: waveIndex + 1,
+        waveIndex: waveIndex,
       );
     } on FirebaseException catch (e) {
       debugPrint('_handleRequestTimeout failed: ${e.message}');
@@ -499,5 +592,15 @@ class _DriverCandidate {
   const _DriverCandidate({
     required this.uid,
     required this.distanceMeters,
+  });
+}
+
+class _DispatchCandidateResult {
+  final List<String> driverUIDs;
+  final int waveIndex;
+
+  const _DispatchCandidateResult({
+    required this.driverUIDs,
+    required this.waveIndex,
   });
 }

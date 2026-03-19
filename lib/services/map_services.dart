@@ -62,6 +62,10 @@ class MapService {
   static const String driverMarkerId = 'assigned_driver_marker';
 
   final String baseUrl = 'https://maps.googleapis.com/maps/api/directions/json';
+  final String placesAutocompleteUrl =
+      'https://maps.googleapis.com/maps/api/place/autocomplete/json';
+  final String placesDetailsUrl =
+      'https://maps.googleapis.com/maps/api/place/details/json';
 
   StreamSubscription<Position>? positionStream;
   Duration duration = Duration.zero;
@@ -80,6 +84,8 @@ class MapService {
   double _lastDriverRotation = 0;
 
   CustomInfoWindowController controller = CustomInfoWindowController();
+
+  LatLng? get driverMarkerLatLng => _lastDriverLatLng;
 
   String get userMapIcon {
     final Roles? userRole = UserRepository.instance.currentUserRole;
@@ -161,8 +167,8 @@ class MapService {
 
     positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 20,
       ),
     ).listen((position) async {
       try {
@@ -243,7 +249,11 @@ class MapService {
     );
   }
 
-  Future<List<Address>> getAddressFromQuery(String query) async {
+  Future<List<Address>> getAddressFromQuery(
+    String query, {
+    LatLng? locationBias,
+    String? sessionToken,
+  }) async {
     searchedAddress.clear();
 
     final normalizedQuery = query.trim();
@@ -253,54 +263,196 @@ class MapService {
     }
 
     try {
-      final locations = await locationFromAddress(normalizedQuery);
+      final Map<String, String> params = <String, String>{
+        'input': normalizedQuery,
+        'key': GoogleMapKey.key,
+        'language': 'en',
+        'types': 'geocode',
+      };
 
-      if (locations.isEmpty) {
-        return searchedAddress;
+      if (sessionToken != null && sessionToken.isNotEmpty) {
+        params['sessiontoken'] = sessionToken;
       }
 
-      for (final location in locations) {
-        try {
-          final placemarks = await placemarkFromCoordinates(
-            location.latitude,
-            location.longitude,
-          );
+      if (locationBias != null) {
+        params['location'] =
+            '${locationBias.latitude},${locationBias.longitude}';
+        params['radius'] = '50000';
+        params['strictbounds'] = 'false';
+      }
 
-          if (placemarks.isEmpty) continue;
+      final uri = Uri.parse(placesAutocompleteUrl).replace(
+        queryParameters: params,
+      );
 
-          final placemark = placemarks.first;
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
 
-          final address = Address(
-            id: CodeGenerator.instance!.generateCode('m'),
-            street: (placemark.street ?? '').isNotEmpty
-                ? placemark.street!
-                : normalizedQuery,
-            city: placemark.locality ?? '',
-            state: placemark.administrativeArea ?? '',
-            country: placemark.country ?? '',
-            latLng: LatLng(location.latitude, location.longitude),
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Places autocomplete failed: ${response.statusCode}',
+        );
+      }
+
+      final Map<String, dynamic> values =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final status = values['status']?.toString() ?? '';
+      if (status != 'OK' && status != 'ZERO_RESULTS') {
+        debugPrint('Places autocomplete status: $status');
+        throw Exception('Places autocomplete returned error');
+      }
+
+      final predictions =
+          values['predictions'] as List<dynamic>? ?? <dynamic>[];
+
+      for (final item in predictions) {
+        final map = item as Map<String, dynamic>;
+        final structured =
+            map['structured_formatting'] as Map<String, dynamic>?;
+        final terms = map['terms'] as List<dynamic>? ?? <dynamic>[];
+
+        final mainText = structured?['main_text']?.toString().trim() ?? '';
+        final secondaryText =
+            structured?['secondary_text']?.toString().trim() ?? '';
+
+        final city = terms.length > 1 ? terms[1].toString() : '';
+        final country = terms.isNotEmpty ? terms.last.toString() : '';
+
+        searchedAddress.add(
+          Address(
+            id: map['place_id']?.toString() ?? '',
+            title: mainText.isNotEmpty ? mainText : secondaryText,
+            street: mainText.isNotEmpty
+                ? mainText
+                : (map['description']?.toString() ?? normalizedQuery),
+            city: city,
+            state: '',
+            country: country,
+            latLng: const LatLng(0, 0),
             polylines: const [],
-            postcode: placemark.postalCode ?? '',
-          );
-
-          final exists = searchedAddress.any(
-            (item) =>
-                item.street == address.street &&
-                item.city == address.city &&
-                item.state == address.state &&
-                item.country == address.country,
-          );
-
-          if (!exists) {
-            searchedAddress.add(address);
-          }
-        } catch (_) {}
+            postcode: '',
+          ),
+        );
       }
-    } catch (_) {
-      // silently ignore incomplete search queries
+    } catch (e) {
+      debugPrint('getAddressFromQuery error: $e');
     }
 
     return searchedAddress;
+  }
+
+  Future<Address?> getPlaceDetails(
+    String placeId, {
+    String? sessionToken,
+  }) async {
+    if (placeId.trim().isEmpty) return null;
+
+    try {
+      final Map<String, String> params = <String, String>{
+        'place_id': placeId,
+        'key': GoogleMapKey.key,
+        'language': 'en',
+        'fields': 'place_id,name,formatted_address,geometry,address_component',
+      };
+
+      if (sessionToken != null && sessionToken.isNotEmpty) {
+        params['sessiontoken'] = sessionToken;
+      }
+
+      final uri = Uri.parse(placesDetailsUrl).replace(
+        queryParameters: params,
+      );
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode != 200) {
+        throw Exception('Place details failed: ${response.statusCode}');
+      }
+
+      final Map<String, dynamic> values =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final status = values['status']?.toString() ?? '';
+      if (status != 'OK') {
+        debugPrint('Place details status: $status');
+        return null;
+      }
+
+      final result = values['result'] as Map<String, dynamic>?;
+      if (result == null) return null;
+
+      final geometry = result['geometry'] as Map<String, dynamic>?;
+      final location = geometry?['location'] as Map<String, dynamic>?;
+
+      final lat = (location?['lat'] as num?)?.toDouble();
+      final lng = (location?['lng'] as num?)?.toDouble();
+
+      if (lat == null || lng == null) return null;
+
+      final components =
+          result['address_components'] as List<dynamic>? ?? <dynamic>[];
+
+      String streetNumber = '';
+      String route = '';
+      String locality = '';
+      String adminArea = '';
+      String country = '';
+      String postalCode = '';
+
+      for (final item in components) {
+        final component = item as Map<String, dynamic>;
+        final types = (component['types'] as List<dynamic>? ?? <dynamic>[])
+            .map((e) => e.toString())
+            .toList();
+
+        if (types.contains('street_number')) {
+          streetNumber = component['long_name']?.toString() ?? '';
+        }
+        if (types.contains('route')) {
+          route = component['long_name']?.toString() ?? '';
+        }
+        if (types.contains('locality')) {
+          locality = component['long_name']?.toString() ?? '';
+        }
+        if (types.contains('administrative_area_level_1')) {
+          adminArea = component['long_name']?.toString() ?? '';
+        }
+        if (types.contains('country')) {
+          country = component['long_name']?.toString() ?? '';
+        }
+        if (types.contains('postal_code')) {
+          postalCode = component['long_name']?.toString() ?? '';
+        }
+      }
+
+      final name = result['name']?.toString().trim() ?? '';
+      final formattedAddress =
+          result['formatted_address']?.toString().trim() ?? '';
+
+      String street = [streetNumber, route]
+          .where((e) => e.trim().isNotEmpty)
+          .join(' ')
+          .trim();
+
+      if (street.isEmpty) {
+        street = name.isNotEmpty ? name : formattedAddress;
+      }
+
+      return Address(
+        id: placeId,
+        title: name.isNotEmpty ? name : street,
+        street: street,
+        city: locality,
+        state: adminArea,
+        country: country,
+        postcode: postalCode,
+        latLng: LatLng(lat, lng),
+        polylines: const [],
+      );
+    } catch (e) {
+      debugPrint('getPlaceDetails error: $e');
+      return null;
+    }
   }
 
   Future<Address?> getPosition(LatLng latLng) async {
@@ -501,7 +653,7 @@ class MapService {
       targetLatLng.longitude,
     );
 
-    if (distance < 1.5) {
+    if (distance < 5) {
       _lastDriverLatLng = targetLatLng;
 
       final driverAddress = _buildDriverAddress(driver, targetLatLng);
@@ -537,8 +689,8 @@ class MapService {
     _driverAnimationTimer?.cancel();
     _driverAnimationTimer = null;
 
-    const int totalSteps = 20;
-    const int stepMilliseconds = 120;
+    const int totalSteps = 36;
+    const int stepMilliseconds = 70;
 
     final double bearing = _calculateBearing(from, to);
     _lastDriverRotation = bearing;
@@ -551,10 +703,12 @@ class MapService {
       (timer) async {
         step++;
 
-        final double t = step / totalSteps;
-        final double lat = from.latitude + ((to.latitude - from.latitude) * t);
+        final double linearT = step / totalSteps;
+        final double easedT = Curves.easeInOut.transform(linearT);
+        final double lat =
+            from.latitude + ((to.latitude - from.latitude) * easedT);
         final double lng =
-            from.longitude + ((to.longitude - from.longitude) * t);
+            from.longitude + ((to.longitude - from.longitude) * easedT);
 
         final LatLng interpolated = LatLng(lat, lng);
         _lastDriverLatLng = interpolated;
@@ -671,6 +825,7 @@ class MapService {
       icon: icon,
       rotation: rotationOverride ?? position?.heading ?? 0,
       anchor: anchor,
+      flat: resolvedMarkerId == driverMarkerId,
       zIndex: zIndex,
       onTap: () {
         controller.addInfoWindow?.call(

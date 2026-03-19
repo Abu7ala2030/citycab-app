@@ -18,8 +18,12 @@ class AddressCard extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.all(0),
-      leading: Icon(address?.title?.toLowerCase() == 'office' ? Icons.work_outline : Icons.home_outlined,
-          size: 30, color: CityTheme.cityblue),
+      leading: Icon(
+          address?.title?.toLowerCase() == 'office'
+              ? Icons.work_outline
+              : Icons.home_outlined,
+          size: 30,
+          color: CityTheme.cityblue),
       title: Text(
         '${address?.title}',
         style: TextStyle(
